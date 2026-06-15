@@ -1,0 +1,46 @@
+import { Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { sendProxyResponse } from '../../common/utils/proxy-response.util';
+import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
+import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
+
+// TODO: remove owner/vouchers alias after Flutter migration (Phase 3)
+@Controller(['mobile/v1/vouchers', 'owner/vouchers'])
+@UseGuards(JwtAuthGuard)
+export class VouchersController {
+  constructor(
+    private readonly ensHttp: EnsHttpService,
+    private readonly assetUrlService: AssetUrlService,
+  ) {}
+
+  @Post('validate')
+  async validate(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: 'vouchers/validate',
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post('redeem-duration')
+  async redeemDuration(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: 'vouchers/redeem-duration',
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+}
