@@ -34,6 +34,10 @@ export class EnvironmentVariables {
   @IsString()
   JWT_ACCESS_SECRET?: string;
 
+  @IsOptional()
+  @IsString()
+  JWT_SECRET?: string;
+
   @IsString()
   @IsNotEmpty()
   SECRET_KEY: string;

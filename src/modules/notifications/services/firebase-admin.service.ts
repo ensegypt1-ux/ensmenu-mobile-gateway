@@ -87,7 +87,7 @@ export class FirebaseAdminService implements OnModuleInit {
       android: {
         priority: 'high',
         notification: {
-          channelId: 'ensmenu_owner_default',
+          channelId: 'ensmenu_owner_notifications',
         },
       },
       apns: {
