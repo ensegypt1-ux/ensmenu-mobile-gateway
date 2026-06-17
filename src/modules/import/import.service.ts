@@ -11,10 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { createFormData } from '../../common/utils/form-data.util';
-import {
-  extractJsonFromN8n,
-  isN8nImportFailure,
-} from './n8n-response.util';
+import { extractJsonFromN8n, isN8nImportFailure } from './n8n-response.util';
 
 const ACCEPTED_MIME_TYPES = new Set([
   'image/png',
@@ -222,7 +219,10 @@ export class ImportService {
   }
 }
 
-function countMenuPayload(payload: unknown): { categories: number; items: number } {
+function countMenuPayload(payload: unknown): {
+  categories: number;
+  items: number;
+} {
   if (!payload || typeof payload !== 'object') {
     return { categories: 0, items: 0 };
   }

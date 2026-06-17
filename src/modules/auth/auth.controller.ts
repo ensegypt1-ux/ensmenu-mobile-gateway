@@ -14,7 +14,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
-import { LoginDebugLogger } from './login-debug.logger';
 
 // TODO: remove owner/auth alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/auth', 'owner/auth'])
@@ -23,7 +22,6 @@ export class AuthController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
-    private readonly loginDebug: LoginDebugLogger,
   ) {}
 
   @Public()
@@ -44,7 +42,11 @@ export class AuthController {
 
   @Public()
   @Post('signup')
-  async signup(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
+  async signup(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'auth/signup',
@@ -56,8 +58,11 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  async login(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
-    const upstreamUrl = this.ensHttp.buildUrl('auth/login');
+  async login(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'auth/login',
@@ -65,19 +70,16 @@ export class AuthController {
       body,
     });
 
-    this.loginDebug.logProxyAttempt({
-      gatewayRoute: `${req.method} ${req.originalUrl}`,
-      upstreamUrl,
-      upstreamStatus: result.status,
-      upstreamBody: result.data,
-    });
-
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
   @Public()
   @Post('refresh')
-  async refresh(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
+  async refresh(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'auth/refresh',
@@ -121,7 +123,11 @@ export class AuthController {
 
   @Public()
   @Post('google')
-  async google(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
+  async google(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'auth/google',
@@ -142,7 +148,11 @@ export class AuthController {
   }
 
   @Post('logout')
-  async logout(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
+  async logout(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'auth/logout',

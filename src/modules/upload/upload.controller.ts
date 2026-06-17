@@ -76,13 +76,6 @@ export class UploadController {
       },
     });
 
-    if (process.env.NODE_ENV !== 'production' && result.data) {
-      const data = result.data as Record<string, unknown>;
-      console.debug(
-        `[Upload] upstream status=${result.status} url=${String(data.url ?? '')} filename=${String(data.filename ?? '')}`,
-      );
-    }
-
     sendProxyResponse(res, result, this.assetUrlService);
   }
 

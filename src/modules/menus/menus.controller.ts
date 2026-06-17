@@ -57,7 +57,11 @@ export class MenusController {
   }
 
   @Post()
-  async create(@Req() req: Request, @Res() res: Response, @Body() body: unknown) {
+  async create(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'menus',

@@ -18,6 +18,7 @@ import { MediaModule } from './modules/media/media.module';
 import { MenusModule } from './modules/menus/menus.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { ImagesModule } from './modules/images/images.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TablesModule } from './modules/tables/tables.module';
@@ -50,6 +51,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     VouchersModule,
     TablesModule,
     StaffModule,
+    NotificationsModule,
   ],
   providers: [
     {

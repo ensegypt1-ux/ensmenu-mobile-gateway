@@ -7,7 +7,8 @@ export class AssetUrlService {
   private readonly backendBase: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.publicBase = this.configService.get<string>('assetPublicBaseUrl') ?? '';
+    this.publicBase =
+      this.configService.get<string>('assetPublicBaseUrl') ?? '';
     this.backendBase = this.configService.get<string>('ensBackendUrl') ?? '';
   }
 

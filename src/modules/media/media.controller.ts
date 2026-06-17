@@ -46,7 +46,12 @@ export class MediaController {
       req,
     });
 
-    if (result.status >= 200 && result.status < 300 && result.data && typeof result.data === 'object') {
+    if (
+      result.status >= 200 &&
+      result.status < 300 &&
+      result.data &&
+      typeof result.data === 'object'
+    ) {
       const menu = result.data as Record<string, unknown>;
       const subset: Record<string, unknown> = {};
       for (const field of MEDIA_FIELDS) {

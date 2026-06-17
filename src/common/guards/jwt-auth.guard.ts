@@ -21,10 +21,15 @@ export class JwtAuthGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ headers: Record<string, string | string[] | undefined> }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<{ headers: Record<string, string | string[] | undefined> }>();
     const authorization = request.headers.authorization;
 
-    if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
+    if (
+      typeof authorization !== 'string' ||
+      !authorization.startsWith('Bearer ')
+    ) {
       throw new UnauthorizedException({
         error: 'Authentication required',
         errorAr: 'مطلوب تسجيل الدخول',

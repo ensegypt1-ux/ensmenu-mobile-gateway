@@ -64,6 +64,22 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsUrl({ require_tld: false })
   N8N_MENU_IMPORT_WEBHOOK?: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT_PATH?: string;
+
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT_JSON?: string;
+
+  @IsOptional()
+  @IsString()
+  INTERNAL_NOTIFICATIONS_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  NOTIFICATION_DEVICES_STORE_PATH?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

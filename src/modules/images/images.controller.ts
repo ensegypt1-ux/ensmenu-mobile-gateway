@@ -34,10 +34,7 @@ export class ImagesController {
       });
     }
 
-    const page = Math.max(
-      1,
-      Number.parseInt(pageParam ?? '1', 10) || 1,
-    );
+    const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
     const perPage = Math.min(
       30,
       Math.max(1, Number.parseInt(perPageParam ?? '15', 10) || 15),

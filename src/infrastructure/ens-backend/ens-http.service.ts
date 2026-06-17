@@ -1,8 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError, AxiosRequestConfig, Method } from 'axios';
 import { Request } from 'express';
@@ -102,7 +99,9 @@ export class EnsHttpService {
         contentType: options.multipart.file.mimetype,
       });
 
-      for (const [key, value] of Object.entries(options.multipart.fields ?? {})) {
+      for (const [key, value] of Object.entries(
+        options.multipart.fields ?? {},
+      )) {
         if (key === 'type' || value === undefined) {
           continue;
         }

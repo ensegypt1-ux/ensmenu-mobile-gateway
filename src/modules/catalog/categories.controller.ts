@@ -18,7 +18,10 @@ import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.servic
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 
 // TODO: remove owner/menus alias after Flutter migration (Phase 3)
-@Controller(['mobile/v1/menus/:menuId/categories', 'owner/menus/:menuId/categories'])
+@Controller([
+  'mobile/v1/menus/:menuId/categories',
+  'owner/menus/:menuId/categories',
+])
 @UseGuards(JwtAuthGuard)
 export class CategoriesController {
   constructor(

@@ -12,4 +12,10 @@ export default () => ({
   uploadMaxMb: parseInt(process.env.UPLOAD_MAX_MB ?? '10', 10),
   pexelsApiKey: process.env.PEXELS_API_KEY,
   n8nMenuImportWebhook: process.env.N8N_MENU_IMPORT_WEBHOOK,
+  firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+  internalNotificationsSecret: process.env.INTERNAL_NOTIFICATIONS_SECRET,
+  notificationDevicesStorePath:
+    process.env.NOTIFICATION_DEVICES_STORE_PATH ??
+    './data/notification-devices.json',
 });
