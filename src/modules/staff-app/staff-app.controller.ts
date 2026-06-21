@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
+import { StaffOrderPresenterService } from './staff-order-presenter.service';
 
 /**
  * Ensmenu Staff mobile app — proxies to Express `/api/staff-auth/*`.
@@ -28,6 +29,7 @@ export class StaffAppController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
+    private readonly orderPresenter: StaffOrderPresenterService,
   ) {}
 
   @Public()
@@ -83,6 +85,12 @@ export class StaffAppController {
       req,
       query,
     });
+    if (result.status >= 200 && result.status < 300) {
+      result.data = await this.orderPresenter.presentListPayload(
+        req,
+        result.data,
+      );
+    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
@@ -98,6 +106,12 @@ export class StaffAppController {
       req,
       query,
     });
+    if (result.status >= 200 && result.status < 300) {
+      result.data = await this.orderPresenter.presentListPayload(
+        req,
+        result.data,
+      );
+    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
@@ -112,6 +126,12 @@ export class StaffAppController {
       path: `staff-auth/table-calls/${id}`,
       req,
     });
+    if (result.status >= 200 && result.status < 300) {
+      result.data = await this.orderPresenter.presentOnePayload(
+        req,
+        result.data,
+      );
+    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
