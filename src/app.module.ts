@@ -21,6 +21,7 @@ import { ImagesModule } from './modules/images/images.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { StaffAppModule } from './modules/staff-app/staff-app.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { UserModule } from './modules/user/user.module';
 import { VerifykitModule } from './modules/verifykit/verifykit.module';
@@ -51,6 +52,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     VouchersModule,
     TablesModule,
     StaffModule,
+    StaffAppModule,
     NotificationsModule,
   ],
   providers: [

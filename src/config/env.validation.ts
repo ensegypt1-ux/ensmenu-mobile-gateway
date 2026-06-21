@@ -43,6 +43,12 @@ export class EnvironmentVariables {
   SECRET_KEY: string;
 
   @IsOptional()
+  @IsInt()
+  @Min(-120)
+  @Max(120)
+  API_KEY_TIME_OFFSET_SECONDS?: number;
+
+  @IsOptional()
   @IsString()
   PUBLIC_MENU_HOST_SUFFIX?: string;
 

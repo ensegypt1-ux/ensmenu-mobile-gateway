@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Post,
   Query,
   Req,
   Res,
@@ -52,6 +54,23 @@ export class ActivityController {
       method: 'GET',
       path: `menus/${menuId}/activity-logs/${id}`,
       req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post(':id/actions')
+  async postAction(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: `menus/${menuId}/activity-logs/${id}/actions`,
+      req,
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }

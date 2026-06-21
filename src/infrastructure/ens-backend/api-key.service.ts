@@ -24,7 +24,11 @@ export class ApiKeyService {
       throw new Error('SECRET_KEY is not configured for upstream x-api-key');
     }
 
-    const utcTime = parseFloat((Date.now() / 1000).toFixed(3));
+    const offsetSec =
+      this.configService.get<number>('apiKeyTimeOffsetSeconds') ?? 0;
+    const utcTime = parseFloat(
+      (Date.now() / 1000 + offsetSec).toFixed(3),
+    );
     const payload = `${this.secretKey}///${utcTime}`;
     const jsonString = JSON.stringify(payload);
     return CryptoJS.AES.encrypt(jsonString, this.secretKey).toString();

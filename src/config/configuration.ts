@@ -7,6 +7,11 @@ export default () => ({
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET,
   jwtSecret: process.env.JWT_SECRET,
   secretKey: process.env.SECRET_KEY ?? process.env.ENCRYPTION_KEY,
+  /** Compensates clock skew vs ENS_BACKEND_URL (backend rejects x-api-key after ~60s). */
+  apiKeyTimeOffsetSeconds: parseInt(
+    process.env.API_KEY_TIME_OFFSET_SECONDS ?? '30',
+    10,
+  ),
   publicMenuHostSuffix: process.env.PUBLIC_MENU_HOST_SUFFIX ?? '.ensmenu.com',
   upstreamTimeoutMs: parseInt(process.env.UPSTREAM_TIMEOUT_MS ?? '30000', 10),
   importTimeoutMs: parseInt(process.env.IMPORT_TIMEOUT_MS ?? '90000', 10),

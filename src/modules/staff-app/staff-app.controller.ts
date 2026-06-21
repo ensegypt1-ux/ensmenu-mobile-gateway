@@ -1,182 +1,180 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
+  Query,
   Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 
-// TODO: remove owner/user alias after Flutter migration (Phase 3)
-@Controller(['mobile/v1/user', 'owner/user'])
+/**
+ * Ensmenu Staff mobile app — proxies to Express `/api/staff-auth/*`.
+ * REST paths use `/orders` naming; upstream uses `table-calls`.
+ */
+@Controller('mobile/v1/staff')
 @UseGuards(JwtAuthGuard)
-export class UserController {
+export class StaffAppController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
   ) {}
 
-  @Get('profile')
-  async getProfile(@Req() req: Request, @Res() res: Response) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'user/profile',
-      req,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Put('profile')
-  async updateProfile(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Body() body: unknown,
-  ) {
-    const result = await this.ensHttp.proxy({
-      method: 'PUT',
-      path: 'user/profile',
-      req,
-      body,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Get('subscription')
-  async getSubscription(@Req() req: Request, @Res() res: Response) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'user/subscription',
-      req,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Get('plans')
-  async getPlans(@Req() req: Request, @Res() res: Response) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'user/plans',
-      req,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  /** Proxied for parity with web; not used by mobile UI in Phase 1. */
-  @Post('subscription/downgrade-to-free')
-  async downgradeToFree(
+  @Public()
+  @Post('auth/login')
+  async login(
     @Req() req: Request,
     @Res() res: Response,
     @Body() body: unknown,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
-      path: 'user/subscription/downgrade-to-free',
+      path: 'staff-auth/login',
+      req,
+      body,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Get('auth/me')
+  async me(@Req() req: Request, @Res() res: Response) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'staff-auth/me',
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post('auth/logout')
+  async logout(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: 'staff-auth/logout',
       req,
       body: body ?? {},
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
-  @Post('subscription/recover-payment')
-  async recoverPayment(
+  @Get('orders')
+  async listPending(
     @Req() req: Request,
     @Res() res: Response,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'staff-auth/table-calls',
+      req,
+      query,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Get('orders/history')
+  async listHistory(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'staff-auth/table-calls/history',
+      req,
+      query,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Get('orders/:id')
+  async getOrder(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: `staff-auth/table-calls/${id}`,
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Put('orders/:id')
+  async putOrder(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
     @Body() body: unknown,
   ) {
     const result = await this.ensHttp.proxy({
-      method: 'POST',
-      path: 'user/subscription/recover-payment',
+      method: 'PUT',
+      path: `staff-auth/table-calls/${id}`,
       req,
       body: body ?? {},
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
-  @Get('delivery/settings')
-  async getDeliverySettings(@Req() req: Request, @Res() res: Response) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'user/delivery/settings',
-      req,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Put('delivery/settings')
-  async updateDeliverySettings(
+  @Patch('orders/:id/status')
+  async patchStatus(
     @Req() req: Request,
     @Res() res: Response,
+    @Param('id') id: string,
     @Body() body: unknown,
   ) {
     const result = await this.ensHttp.proxy({
-      method: 'PUT',
-      path: 'user/delivery/settings',
+      method: 'PATCH',
+      path: `staff-auth/table-calls/${id}/status`,
       req,
-      body,
+      body: body ?? {},
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
-  @Get('delivery/governorates')
-  async getDeliveryGovernorates(@Req() req: Request, @Res() res: Response) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'user/delivery/governorates',
-      req,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Post('delivery/governorates')
-  async createDeliveryGovernorate(
+  @Patch('orders/:id/advance')
+  async patchAdvance(
     @Req() req: Request,
     @Res() res: Response,
+    @Param('id') id: string,
     @Body() body: unknown,
   ) {
     const result = await this.ensHttp.proxy({
-      method: 'POST',
-      path: 'user/delivery/governorates',
+      method: 'PATCH',
+      path: `staff-auth/table-calls/${id}/advance`,
       req,
-      body,
+      body: body ?? {},
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
-  @Put('delivery/governorates/:governorateId')
-  async updateDeliveryGovernorate(
+  @Patch('orders/:id/items')
+  async patchItems(
     @Req() req: Request,
     @Res() res: Response,
-    @Param('governorateId') governorateId: string,
+    @Param('id') id: string,
     @Body() body: unknown,
   ) {
     const result = await this.ensHttp.proxy({
-      method: 'PUT',
-      path: `user/delivery/governorates/${governorateId}`,
+      method: 'PATCH',
+      path: `staff-auth/table-calls/${id}/items`,
       req,
-      body,
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Delete('delivery/governorates/:governorateId')
-  async deleteDeliveryGovernorate(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Param('governorateId') governorateId: string,
-  ) {
-    const result = await this.ensHttp.proxy({
-      method: 'DELETE',
-      path: `user/delivery/governorates/${governorateId}`,
-      req,
+      body: body ?? {},
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
