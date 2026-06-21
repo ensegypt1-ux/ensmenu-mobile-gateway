@@ -14,7 +14,7 @@ import {
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { sendProxyResponse } from '../../common/utils/proxy-response.util';
+import { sendProxyResponse, STAFF_ORDER_PRESENTER_HEADER, STAFF_ORDER_PRESENTER_VERSION } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 import { StaffOrderPresenterService } from './staff-order-presenter.service';
@@ -91,7 +91,9 @@ export class StaffAppController {
         result.data,
       );
     }
-    sendProxyResponse(res, result, this.assetUrlService);
+    sendProxyResponse(res, result, this.assetUrlService, {
+      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+    });
   }
 
   @Get('orders/history')
@@ -112,7 +114,9 @@ export class StaffAppController {
         result.data,
       );
     }
-    sendProxyResponse(res, result, this.assetUrlService);
+    sendProxyResponse(res, result, this.assetUrlService, {
+      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+    });
   }
 
   @Get('orders/:id')
@@ -132,7 +136,9 @@ export class StaffAppController {
         result.data,
       );
     }
-    sendProxyResponse(res, result, this.assetUrlService);
+    sendProxyResponse(res, result, this.assetUrlService, {
+      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+    });
   }
 
   @Put('orders/:id')
