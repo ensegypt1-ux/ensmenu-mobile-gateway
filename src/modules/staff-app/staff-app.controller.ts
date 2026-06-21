@@ -17,7 +17,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
-import { StaffOrderEnrichmentService } from './staff-order-enrichment.service';
 
 /**
  * Ensmenu Staff mobile app — proxies to Express `/api/staff-auth/*`.
@@ -29,7 +28,6 @@ export class StaffAppController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
-    private readonly staffOrderEnrichment: StaffOrderEnrichmentService,
   ) {}
 
   @Public()
@@ -85,13 +83,6 @@ export class StaffAppController {
       req,
       query,
     });
-    if (result.status >= 200 && result.status < 300) {
-      const enriched = await this.staffOrderEnrichment.enrichOrderPayload(
-        req,
-        result.data,
-      );
-      result.data = enriched.data;
-    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
@@ -107,13 +98,6 @@ export class StaffAppController {
       req,
       query,
     });
-    if (result.status >= 200 && result.status < 300) {
-      const enriched = await this.staffOrderEnrichment.enrichOrderPayload(
-        req,
-        result.data,
-      );
-      result.data = enriched.data;
-    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
@@ -128,13 +112,6 @@ export class StaffAppController {
       path: `staff-auth/table-calls/${id}`,
       req,
     });
-    if (result.status >= 200 && result.status < 300) {
-      const enriched = await this.staffOrderEnrichment.enrichOrderPayload(
-        req,
-        result.data,
-      );
-      result.data = enriched.data;
-    }
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
