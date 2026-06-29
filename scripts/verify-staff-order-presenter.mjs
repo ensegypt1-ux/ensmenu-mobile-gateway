@@ -47,6 +47,7 @@ async function main() {
     headers: { Authorization: `Bearer ${token}` },
   });
   const presenterHeader = ordersRes.headers.get('x-staff-order-presenter');
+  const enrichmentHeader = ordersRes.headers.get('x-staff-order-enrichment');
   const ordersBody = await ordersRes.json();
 
   const calls = Array.isArray(ordersBody.calls) ? ordersBody.calls : [];
@@ -57,6 +58,7 @@ async function main() {
   console.log('URL:', `${baseUrl}/mobile/v1/staff/orders`);
   console.log('HTTP status:', ordersRes.status);
   console.log('X-Staff-Order-Presenter:', presenterHeader ?? '(missing)');
+  console.log('X-Staff-Order-Enrichment:', enrichmentHeader ?? '(missing)');
   console.log('Has entries[] key:', hasEntriesKey);
   console.log('entries.length:', entries.length);
   console.log('calls.length:', calls.length);
@@ -66,6 +68,9 @@ async function main() {
     console.log('Sample entry keys:', Object.keys(sample).sort().join(', '));
     console.log('Sample orderId:', sample.orderId);
     console.log('Sample lastAction:', sample.lastAction);
+    console.log('Sample customerPhone:', sample.customerPhone ?? '(null)');
+    console.log('Sample governorateNameEn:', sample.governorateNameEn ?? '(null)');
+    console.log('Sample customerAddress:', sample.customerAddress ?? '(null)');
     console.log('Sample orderNotes:', sample.orderNotes ?? '(null)');
   }
 

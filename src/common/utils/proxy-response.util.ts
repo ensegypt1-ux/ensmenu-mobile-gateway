@@ -4,6 +4,7 @@ import { EnsHttpResult } from '../../infrastructure/ens-backend/ens-http.service
 
 export const STAFF_ORDER_PRESENTER_HEADER = 'X-Staff-Order-Presenter';
 export const STAFF_ORDER_PRESENTER_VERSION = 'v1';
+export const STAFF_ORDER_ENRICHMENT_HEADER = 'X-Staff-Order-Enrichment';
 
 export function sendProxyResponse(
   res: Response,

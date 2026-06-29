@@ -14,7 +14,7 @@ import {
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { sendProxyResponse, STAFF_ORDER_PRESENTER_HEADER, STAFF_ORDER_PRESENTER_VERSION } from '../../common/utils/proxy-response.util';
+import { sendProxyResponse, STAFF_ORDER_ENRICHMENT_HEADER, STAFF_ORDER_PRESENTER_HEADER, STAFF_ORDER_PRESENTER_VERSION } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 import { StaffOrderPresenterService } from './staff-order-presenter.service';
@@ -86,10 +86,16 @@ export class StaffAppController {
       query,
     });
     if (result.status >= 200 && result.status < 300) {
-      result.data = await this.orderPresenter.presentListPayload(
+      const presented = await this.orderPresenter.presentListPayload(
         req,
         result.data,
       );
+      result.data = presented.data;
+      sendProxyResponse(res, result, this.assetUrlService, {
+        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
+      });
+      return;
     }
     sendProxyResponse(res, result, this.assetUrlService, {
       [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
@@ -109,10 +115,16 @@ export class StaffAppController {
       query,
     });
     if (result.status >= 200 && result.status < 300) {
-      result.data = await this.orderPresenter.presentListPayload(
+      const presented = await this.orderPresenter.presentListPayload(
         req,
         result.data,
       );
+      result.data = presented.data;
+      sendProxyResponse(res, result, this.assetUrlService, {
+        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
+      });
+      return;
     }
     sendProxyResponse(res, result, this.assetUrlService, {
       [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
@@ -131,10 +143,16 @@ export class StaffAppController {
       req,
     });
     if (result.status >= 200 && result.status < 300) {
-      result.data = await this.orderPresenter.presentOnePayload(
+      const presented = await this.orderPresenter.presentOnePayload(
         req,
         result.data,
       );
+      result.data = presented.data;
+      sendProxyResponse(res, result, this.assetUrlService, {
+        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
+      });
+      return;
     }
     sendProxyResponse(res, result, this.assetUrlService, {
       [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
