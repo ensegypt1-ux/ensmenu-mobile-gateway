@@ -6,6 +6,8 @@ import { Request } from 'express';
 export interface JwtUserPayload {
   userId: number;
   role?: string;
+  /** Staff job role when `role` is `staff`: `waiter` | `cashier` */
+  staffJobRole?: string;
 }
 
 export function coerceUserId(raw: unknown): number | null {
@@ -40,7 +42,11 @@ function payloadToUser(payload: jwt.JwtPayload): JwtUserPayload | null {
   const roleRaw = payload.role ?? payload.userRole;
   const role = typeof roleRaw === 'string' ? roleRaw : undefined;
 
-  return { userId, role };
+  const staffJobRoleRaw = payload.staffJobRole;
+  const staffJobRole =
+    typeof staffJobRoleRaw === 'string' ? staffJobRoleRaw : undefined;
+
+  return { userId, role, staffJobRole };
 }
 
 /** Verifies access token locally when gateway JWT secrets match the issuer. */

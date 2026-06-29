@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import {
@@ -11,12 +12,22 @@ import {
   resolveOrderType,
   type StaffOrderEnrichmentSource,
 } from './staff-order-delivery-enrichment.util';
+import {
+  canStaffAccessDelivery,
+  filterTableOnlyStaffCalls,
+  isDeliveryStaffCall,
+  resolveStaffJobRoleFromRequest,
+  type StaffJobRole,
+} from './staff-job-role.util';
 
 type JsonRecord = Record<string, unknown>;
 
 export type StaffOrderPresentResult = {
   data: JsonRecord;
   enrichment: StaffOrderEnrichmentSource;
+  staffJobRole: StaffJobRole;
+  denied?: boolean;
+  httpStatus?: number;
 };
 
 /**
@@ -39,20 +50,38 @@ export class StaffOrderPresenterService {
   private static readonly MAX_ACTIVITY_PAGES = 5;
   private static readonly DETAIL_ENRICH_CONCURRENCY = 6;
 
-  constructor(private readonly ensHttp: EnsHttpService) {}
+  constructor(
+    private readonly ensHttp: EnsHttpService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async presentListPayload(
     req: Request,
     staffData: unknown,
   ): Promise<StaffOrderPresentResult> {
+    const staffJobRole = resolveStaffJobRoleFromRequest(req, this.configService);
+    const deliveryAllowed = canStaffAccessDelivery(staffJobRole);
+
     if (!staffData || typeof staffData !== 'object') {
-      return { data: staffData as JsonRecord, enrichment: 'staff-auth-only' };
+      return {
+        data: staffData as JsonRecord,
+        enrichment: 'staff-auth-only',
+        staffJobRole,
+      };
     }
 
     const root = staffData as JsonRecord;
-    const calls = this.extractStaffCalls(root);
+    let calls = this.extractStaffCalls(root);
+    if (!deliveryAllowed) {
+      calls = filterTableOnlyStaffCalls(calls);
+    }
+
     if (calls.length === 0) {
-      return { data: { ...root, entries: [] }, enrichment: 'staff-auth-only' };
+      return {
+        data: { ...root, entries: [], calls: [] },
+        enrichment: 'staff-auth-only',
+        staffJobRole,
+      };
     }
 
     const menuId = this.resolveMenuId(calls);
@@ -63,7 +92,7 @@ export class StaffOrderPresenterService {
     );
 
     const { byStaffCallId, activityLogAccess } =
-      menuId != null
+      deliveryAllowed && menuId != null
         ? await this.fetchActivityIndex(req, menuId, targetIds)
         : {
             byStaffCallId: new Map<number, JsonRecord>(),
@@ -99,32 +128,54 @@ export class StaffOrderPresenterService {
       }
     }
 
-    return { data: { ...root, entries, calls }, enrichment };
+    return { data: { ...root, entries, calls }, enrichment, staffJobRole };
   }
 
   async presentOnePayload(
     req: Request,
     staffData: unknown,
   ): Promise<StaffOrderPresentResult> {
+    const staffJobRole = resolveStaffJobRoleFromRequest(req, this.configService);
+    const deliveryAllowed = canStaffAccessDelivery(staffJobRole);
+
     if (!staffData || typeof staffData !== 'object') {
       const entry = this.staffCallToEntry(staffData as JsonRecord);
-      return { data: { entry }, enrichment: 'staff-auth-only' };
+      return {
+        data: { entry },
+        enrichment: 'staff-auth-only',
+        staffJobRole,
+      };
     }
 
     const staffCall = staffData as JsonRecord;
+
+    if (!deliveryAllowed && isDeliveryStaffCall(staffCall)) {
+      return {
+        data: {},
+        enrichment: 'staff-auth-only',
+        staffJobRole,
+        denied: true,
+      };
+    }
+
     const menuId = Number(staffCall.menuId);
     const staffCallId = Number(staffCall.id);
 
     if (!Number.isFinite(menuId) || menuId <= 0 || !Number.isFinite(staffCallId)) {
       const entry = this.staffCallToEntry(staffCall);
-      return { data: { entry }, enrichment: 'staff-auth-only' };
+      return {
+        data: { entry },
+        enrichment: 'staff-auth-only',
+        staffJobRole,
+      };
     }
 
-    const { byStaffCallId, activityLogAccess } = await this.fetchActivityIndex(
-      req,
-      menuId,
-      new Set([staffCallId]),
-    );
+    const { byStaffCallId, activityLogAccess } = deliveryAllowed
+      ? await this.fetchActivityIndex(req, menuId, new Set([staffCallId]))
+      : {
+          byStaffCallId: new Map<number, JsonRecord>(),
+          activityLogAccess: 'denied' as const,
+        };
 
     let listEntry = this.presentCall(
       staffCall,
@@ -151,7 +202,16 @@ export class StaffOrderPresenterService {
     return {
       data: { entry: listEntry, ...staffCall, entries: [listEntry] },
       enrichment,
+      staffJobRole,
     };
+  }
+
+  presentFromActivityDetail(
+    staffCall: JsonRecord,
+    activityDetail: JsonRecord,
+  ): JsonRecord {
+    const listEntry = this.presentCall(staffCall, activityDetail);
+    return this.presentDetail(activityDetail, staffCall, listEntry);
   }
 
   private async enrichEntriesWithActivityDetails(
@@ -245,10 +305,16 @@ export class StaffOrderPresenterService {
     const actionDetails = actions.map((a) => {
       if (!a || typeof a !== 'object') return a;
       const act = a as JsonRecord;
+      const actionName = String(act.action ?? act.status ?? '').trim();
+      const statusName = String(act.status ?? act.action ?? '').trim();
       return {
+        action: actionName,
+        status: statusName,
         waiterName: act.waiterName ?? '',
+        actorRole: act.actorRole ?? '',
         time: act.time ?? '',
-        status: act.status ?? '',
+        summaryEn: act.summaryEn ?? null,
+        summaryAr: act.summaryAr ?? null,
       };
     });
 
@@ -288,6 +354,9 @@ export class StaffOrderPresenterService {
 
     if (order) {
       merged.order = order;
+    }
+    if (actions.length > 0) {
+      merged.actions = actions;
     }
 
     return merged;
@@ -371,9 +440,9 @@ export class StaffOrderPresenterService {
     let anySuccess = false;
 
     const queryVariants: Array<Record<string, unknown>> = [
-      {},
       { channel: 'delivery' },
       { channel: 'table' },
+      {},
     ];
 
     const allTargetsFound = (): boolean => {

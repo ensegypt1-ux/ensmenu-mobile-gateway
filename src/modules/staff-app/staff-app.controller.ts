@@ -14,10 +14,11 @@ import {
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { sendProxyResponse, STAFF_ORDER_ENRICHMENT_HEADER, STAFF_ORDER_PRESENTER_HEADER, STAFF_ORDER_PRESENTER_VERSION } from '../../common/utils/proxy-response.util';
+import { sendProxyResponse, STAFF_JOB_ROLE_HEADER, STAFF_ORDER_ENRICHMENT_HEADER, STAFF_ORDER_PRESENTER_HEADER, STAFF_ORDER_PRESENTER_VERSION } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
-import { StaffOrderPresenterService } from './staff-order-presenter.service';
+import { StaffOrderPresenterService, StaffOrderPresentResult } from './staff-order-presenter.service';
+import { StaffOrdersFlowService } from './staff-orders-flow.service';
 
 /**
  * Ensmenu Staff mobile app — proxies to Express `/api/staff-auth/*`.
@@ -30,7 +31,18 @@ export class StaffAppController {
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
     private readonly orderPresenter: StaffOrderPresenterService,
+    private readonly ordersFlow: StaffOrdersFlowService,
   ) {}
+
+  private presenterHeaders(
+    presented: StaffOrderPresentResult,
+  ): Record<string, string> {
+    return {
+      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
+      [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
+      [STAFF_JOB_ROLE_HEADER]: presented.staffJobRole,
+    };
+  }
 
   @Public()
   @Post('auth/login')
@@ -79,27 +91,17 @@ export class StaffAppController {
     @Res() res: Response,
     @Query() query: Record<string, unknown>,
   ) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'staff-auth/table-calls',
+    const presented = await this.ordersFlow.listOrders(
       req,
       query,
-    });
-    if (result.status >= 200 && result.status < 300) {
-      const presented = await this.orderPresenter.presentListPayload(
-        req,
-        result.data,
-      );
-      result.data = presented.data;
-      sendProxyResponse(res, result, this.assetUrlService, {
-        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
-      });
-      return;
-    }
-    sendProxyResponse(res, result, this.assetUrlService, {
-      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-    });
+      'staff-auth/table-calls',
+    );
+    sendProxyResponse(
+      res,
+      { status: presented.httpStatus ?? 200, data: presented.data },
+      this.assetUrlService,
+      this.presenterHeaders(presented),
+    );
   }
 
   @Get('orders/history')
@@ -108,27 +110,17 @@ export class StaffAppController {
     @Res() res: Response,
     @Query() query: Record<string, unknown>,
   ) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: 'staff-auth/table-calls/history',
+    const presented = await this.ordersFlow.listOrders(
       req,
       query,
-    });
-    if (result.status >= 200 && result.status < 300) {
-      const presented = await this.orderPresenter.presentListPayload(
-        req,
-        result.data,
-      );
-      result.data = presented.data;
-      sendProxyResponse(res, result, this.assetUrlService, {
-        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
-      });
-      return;
-    }
-    sendProxyResponse(res, result, this.assetUrlService, {
-      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-    });
+      'staff-auth/table-calls/history',
+    );
+    sendProxyResponse(
+      res,
+      { status: presented.httpStatus ?? 200, data: presented.data },
+      this.assetUrlService,
+      this.presenterHeaders(presented),
+    );
   }
 
   @Get('orders/:id')
@@ -136,27 +128,41 @@ export class StaffAppController {
     @Req() req: Request,
     @Res() res: Response,
     @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
   ) {
-    const result = await this.ensHttp.proxy({
-      method: 'GET',
-      path: `staff-auth/table-calls/${id}`,
-      req,
-    });
-    if (result.status >= 200 && result.status < 300) {
-      const presented = await this.orderPresenter.presentOnePayload(
-        req,
-        result.data,
-      );
-      result.data = presented.data;
-      sendProxyResponse(res, result, this.assetUrlService, {
-        [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-        [STAFF_ORDER_ENRICHMENT_HEADER]: presented.enrichment,
+    const staffCallId = Number(id);
+    const menuId = this.ordersFlow.parseMenuId(query);
+    const presented = await this.ordersFlow.getOrder(req, staffCallId, menuId);
+
+    if (presented.denied) {
+      res.status(403).json({
+        error: 'Delivery orders are not available for your staff role',
+        errorAr: 'طلبات التوصيل غير متاحة لدورك الوظيفي',
+        code: 'STAFF_DELIVERY_DENIED',
       });
       return;
     }
-    sendProxyResponse(res, result, this.assetUrlService, {
-      [STAFF_ORDER_PRESENTER_HEADER]: STAFF_ORDER_PRESENTER_VERSION,
-    });
+
+    sendProxyResponse(res, { status: 200, data: presented.data }, this.assetUrlService, this.presenterHeaders(presented));
+  }
+
+  @Post('orders/:id/actions')
+  async postOrderAction(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const staffCallId = Number(id);
+    const action = String(body.action ?? '');
+    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const result = await this.ordersFlow.postOrderAction(
+      req,
+      staffCallId,
+      action,
+      menuId,
+    );
+    sendProxyResponse(res, result, this.assetUrlService);
   }
 
   @Put('orders/:id')
@@ -196,14 +202,30 @@ export class StaffAppController {
     @Req() req: Request,
     @Res() res: Response,
     @Param('id') id: string,
-    @Body() body: unknown,
+    @Body() body: Record<string, unknown>,
   ) {
-    const result = await this.ensHttp.proxy({
-      method: 'PATCH',
-      path: `staff-auth/table-calls/${id}/advance`,
+    const status = String(body.status ?? '').trim().toLowerCase();
+    const action =
+      status === 'prepared'
+        ? 'TABLE_CALL_PREPARED'
+        : status === 'delivered'
+          ? 'TABLE_CALL_DELIVERED'
+          : '';
+    if (!action) {
+      res.status(400).json({
+        error: 'status must be prepared or delivered',
+        errorAr: 'يجب أن تكون الحالة prepared أو delivered',
+        code: 'INVALID_STATUS',
+      });
+      return;
+    }
+    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const result = await this.ordersFlow.postOrderAction(
       req,
-      body: body ?? {},
-    });
+      Number(id),
+      action,
+      menuId,
+    );
     sendProxyResponse(res, result, this.assetUrlService);
   }
 

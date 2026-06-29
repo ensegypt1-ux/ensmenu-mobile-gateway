@@ -1,20 +1,32 @@
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { StaffOrderPresenterService } from './staff-order-presenter.service';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
+import * as staffJobRoleUtil from './staff-job-role.util';
 
 describe('StaffOrderPresenterService', () => {
   let service: StaffOrderPresenterService;
   let ensHttp: { proxy: jest.Mock };
+  let resolveRoleSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     ensHttp = { proxy: jest.fn() };
+    resolveRoleSpy = jest
+      .spyOn(staffJobRoleUtil, 'resolveStaffJobRoleFromRequest')
+      .mockReturnValue('cashier');
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StaffOrderPresenterService,
         { provide: EnsHttpService, useValue: ensHttp },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
     service = module.get(StaffOrderPresenterService);
+  });
+
+  afterEach(() => {
+    resolveRoleSpy.mockRestore();
   });
 
   it('enriches delivery fields from activity-log list for cashier', async () => {
@@ -61,14 +73,15 @@ describe('StaffOrderPresenterService', () => {
 
     const entries = result.data.entries as Record<string, unknown>[];
     expect(result.enrichment).toBe('activity-log');
+    expect(result.staffJobRole).toBe('cashier');
     expect(entries[0].customerPhone).toBe('01012345678');
     expect(entries[0].customerAddress).toBe('Street 12');
     expect(entries[0].orderNotes).toBe('Ring bell');
     expect(entries[0].governorateNameEn).toBe('Tanta');
   });
 
-  it('falls back to staff-auth-only when activity logs are forbidden (waiter)', async () => {
-    ensHttp.proxy.mockResolvedValue({ status: 404, data: null });
+  it('filters delivery orders and skips activity logs for waiter', async () => {
+    resolveRoleSpy.mockReturnValue('waiter');
 
     const result = await service.presentListPayload({} as never, {
       calls: [
@@ -81,13 +94,40 @@ describe('StaffOrderPresenterService', () => {
           customerName: 'asasas',
           items: [],
         },
+        {
+          id: 480,
+          menuId: 1,
+          tableNumber: '3',
+          status: 'pending',
+          orderTotal: 50,
+          items: [],
+        },
       ],
     });
 
     const entries = result.data.entries as Record<string, unknown>[];
     expect(result.enrichment).toBe('staff-auth-only');
-    expect(entries[0].customerPhone == null).toBe(true);
-    expect(entries[0].type).toBe('delivery');
+    expect(result.staffJobRole).toBe('waiter');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].orderId).toBe('480');
+    expect(ensHttp.proxy).not.toHaveBeenCalled();
+  });
+
+  it('denies delivery order detail for waiter', async () => {
+    resolveRoleSpy.mockReturnValue('waiter');
+
+    const result = await service.presentOnePayload({} as never, {
+      id: 519,
+      menuId: 1,
+      tableNumber: '',
+      status: 'pending',
+      orderTotal: 200,
+      customerName: 'asasas',
+      items: [],
+    });
+
+    expect(result.denied).toBe(true);
+    expect(ensHttp.proxy).not.toHaveBeenCalled();
   });
 
   it('backfills phone from activity-log detail when list row is incomplete', async () => {
