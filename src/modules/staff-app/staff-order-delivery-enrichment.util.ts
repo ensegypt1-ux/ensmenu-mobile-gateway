@@ -154,8 +154,9 @@ export function resolveOrderType(call: JsonRecord): string {
     .trim()
     .toLowerCase();
   if (table === 'delivery') return 'delivery';
-  // Express stores delivery orders with empty tableNumber.
-  if (table === '') return 'delivery';
+  if (table === '') {
+    return isDeliveryLike(call, fields) ? 'delivery' : 'table';
+  }
   if (isDeliveryLike(call, fields)) return 'delivery';
   return 'table';
 }
