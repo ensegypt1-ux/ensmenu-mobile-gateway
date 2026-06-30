@@ -1,556 +1,348 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Request } from 'express';
-import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
+import { Injectable } from '@nestjs/common';
+import { StaffJobRole } from './staff-job-role.util';
 import {
-  activityLogIdFromRow,
-  applyDeliveryFields,
-  extractDeliveryCustomerFields,
-  firstText,
-  hasText,
-  needsDeliveryDetailEnrichment,
-  resolveOrderType,
-  type StaffOrderEnrichmentSource,
-} from './staff-order-delivery-enrichment.util';
+  availableActionsForOrder,
+  canStaffProcessOrders,
+  canStaffViewDelivery,
+  statusLabelFor,
+  StaffOrderActionSpec,
+} from './staff-order-actions.util';
 import {
-  canStaffAccessDelivery,
-  filterTableOnlyStaffCalls,
-  isDeliveryStaffCall,
-  resolveStaffJobRoleFromRequest,
-  type StaffJobRole,
-} from './staff-job-role.util';
+  isActiveStaffOrderStatus,
+  resolveLatestOrderStatus,
+  resolveListEntryStatus,
+  StaffOrderStatus,
+} from './staff-order-status.util';
 
-type JsonRecord = Record<string, unknown>;
+export type StaffOrderChannel = 'table' | 'delivery';
 
-export type StaffOrderPresentResult = {
-  data: JsonRecord;
-  enrichment: StaffOrderEnrichmentSource;
-  staffJobRole: StaffJobRole;
-  denied?: boolean;
-  httpStatus?: number;
+export type StaffPresentedOrderItem = {
+  menuItemId?: number | null;
+  name: string;
+  quantity: number;
+  price: number;
+  total: number;
+  notes?: string | null;
+  size?: Record<string, unknown> | null;
+  variant?: Record<string, unknown> | null;
 };
 
-/**
- * BFF presenter: staff-auth table-calls + activity-logs → web `CallEntry` shape.
- * Join: activityLog.orderId === staffTableCall.id
- *
- * Delivery customer fields (phone, zone, address, notes) live in MenuOrders.orderJson
- * and are exposed via GET /api/menus/:menuId/activity-logs(+/:id). Staff-auth table-calls
- * does not return them. This presenter merges activity-log data without changing Express.
- *
- * Access note (production backend): activity logs are readable for owner JWT and staff
- * with cashier/casher role. Waiter staff receive 403/404 from activity logs — enrichment
- * falls back to staff-auth only and delivery customer fields stay empty.
- */
+export type StaffPresentedOrderEntry = {
+  id: string;
+  staffCallId: number;
+  activityLogId: number | null;
+  channel: StaffOrderChannel;
+  status: StaffOrderStatus;
+  statusLabel: { en: string; ar: string };
+  tableNumber: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  orderNotes: string | null;
+  governorateId: number | null;
+  governorateNameAr: string | null;
+  governorateNameEn: string | null;
+  deliveryFee: number | null;
+  items: StaffPresentedOrderItem[];
+  itemCount: number;
+  totalPrice: number;
+  createdAt: string | null;
+  actionDetails: Array<{ status?: string; time?: string; waiterName?: string }>;
+  availableActions: StaffOrderActionSpec[];
+  canEditItems: boolean;
+};
+
+export type StaffOrderCapabilities = {
+  staffJobRole: StaffJobRole;
+  canProcessOrders: boolean;
+  canViewDelivery: boolean;
+  channels: StaffOrderChannel[];
+};
+
+export type StaffPresentedListResult = {
+  staffJobRole: StaffJobRole;
+  channel: StaffOrderChannel;
+  scope: 'active' | 'history';
+  entries: StaffPresentedOrderEntry[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  capabilities: StaffOrderCapabilities;
+};
+
+export type StaffPresentedDetailResult = {
+  staffJobRole: StaffJobRole;
+  entry: StaffPresentedOrderEntry;
+  actions: Array<Record<string, unknown>>;
+  capabilities: StaffOrderCapabilities;
+};
+
 @Injectable()
 export class StaffOrderPresenterService {
-  private readonly logger = new Logger(StaffOrderPresenterService.name);
-
-  private static readonly ACTIVITY_PAGE_LIMIT = 100;
-  private static readonly MAX_ACTIVITY_PAGES = 5;
-  private static readonly DETAIL_ENRICH_CONCURRENCY = 6;
-
-  constructor(
-    private readonly ensHttp: EnsHttpService,
-    private readonly configService: ConfigService,
-  ) {}
-
-  async presentListPayload(
-    req: Request,
-    staffData: unknown,
-  ): Promise<StaffOrderPresentResult> {
-    const staffJobRole = resolveStaffJobRoleFromRequest(req, this.configService);
-    const deliveryAllowed = canStaffAccessDelivery(staffJobRole);
-
-    if (!staffData || typeof staffData !== 'object') {
-      return {
-        data: staffData as JsonRecord,
-        enrichment: 'staff-auth-only',
-        staffJobRole,
-      };
+  capabilitiesFor(role: StaffJobRole): StaffOrderCapabilities {
+    const channels: StaffOrderChannel[] = ['table'];
+    if (canStaffViewDelivery(role)) {
+      channels.push('delivery');
     }
-
-    const root = staffData as JsonRecord;
-    let calls = this.extractStaffCalls(root);
-    if (!deliveryAllowed) {
-      calls = filterTableOnlyStaffCalls(calls);
-    }
-
-    if (calls.length === 0) {
-      return {
-        data: { ...root, entries: [], calls: [] },
-        enrichment: 'staff-auth-only',
-        staffJobRole,
-      };
-    }
-
-    const menuId = this.resolveMenuId(calls);
-    const targetIds = new Set(
-      calls
-        .map((c) => Number(c.id))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    );
-
-    const { byStaffCallId, activityLogAccess } =
-      deliveryAllowed && menuId != null
-        ? await this.fetchActivityIndex(req, menuId, targetIds)
-        : {
-            byStaffCallId: new Map<number, JsonRecord>(),
-            activityLogAccess: 'denied' as const,
-          };
-
-    let entries = calls.map((call) =>
-      this.presentCall(call, byStaffCallId.get(Number(call.id))),
-    );
-
-    let enrichment: StaffOrderEnrichmentSource = 'staff-auth-only';
-    if (activityLogAccess === 'granted') {
-      enrichment = 'activity-log';
-      const phonesBefore = entries.map(
-        (e) => extractDeliveryCustomerFields(e).customerPhone,
-      );
-      entries = await this.enrichEntriesWithActivityDetails(
-        req,
-        menuId!,
-        calls,
-        entries,
-        byStaffCallId,
-      );
-      const phonesAfter = entries.map(
-        (e) => extractDeliveryCustomerFields(e).customerPhone,
-      );
-      if (
-        phonesAfter.some(
-          (phone, i) => !hasText(phonesBefore[i]) && hasText(phone),
-        )
-      ) {
-        enrichment = 'activity-log-detail';
-      }
-    }
-
-    return { data: { ...root, entries, calls }, enrichment, staffJobRole };
-  }
-
-  async presentOnePayload(
-    req: Request,
-    staffData: unknown,
-  ): Promise<StaffOrderPresentResult> {
-    const staffJobRole = resolveStaffJobRoleFromRequest(req, this.configService);
-    const deliveryAllowed = canStaffAccessDelivery(staffJobRole);
-
-    if (!staffData || typeof staffData !== 'object') {
-      const entry = this.staffCallToEntry(staffData as JsonRecord);
-      return {
-        data: { entry },
-        enrichment: 'staff-auth-only',
-        staffJobRole,
-      };
-    }
-
-    const staffCall = staffData as JsonRecord;
-
-    if (!deliveryAllowed && isDeliveryStaffCall(staffCall)) {
-      return {
-        data: {},
-        enrichment: 'staff-auth-only',
-        staffJobRole,
-        denied: true,
-      };
-    }
-
-    const menuId = Number(staffCall.menuId);
-    const staffCallId = Number(staffCall.id);
-
-    if (!Number.isFinite(menuId) || menuId <= 0 || !Number.isFinite(staffCallId)) {
-      const entry = this.staffCallToEntry(staffCall);
-      return {
-        data: { entry },
-        enrichment: 'staff-auth-only',
-        staffJobRole,
-      };
-    }
-
-    const { byStaffCallId, activityLogAccess } = deliveryAllowed
-      ? await this.fetchActivityIndex(req, menuId, new Set([staffCallId]))
-      : {
-          byStaffCallId: new Map<number, JsonRecord>(),
-          activityLogAccess: 'denied' as const,
-        };
-
-    let listEntry = this.presentCall(
-      staffCall,
-      byStaffCallId.get(staffCallId),
-    );
-
-    let enrichment: StaffOrderEnrichmentSource = 'staff-auth-only';
-    if (activityLogAccess === 'granted') {
-      enrichment = 'activity-log';
-      const phoneBefore = extractDeliveryCustomerFields(listEntry).customerPhone;
-      listEntry = await this.enrichSingleEntryWithActivityDetail(
-        req,
-        menuId,
-        staffCall,
-        listEntry,
-        byStaffCallId.get(staffCallId),
-      );
-      const phoneAfter = extractDeliveryCustomerFields(listEntry).customerPhone;
-      if (!hasText(phoneBefore) && hasText(phoneAfter)) {
-        enrichment = 'activity-log-detail';
-      }
-    }
-
     return {
-      data: { entry: listEntry, ...staffCall, entries: [listEntry] },
-      enrichment,
-      staffJobRole,
+      staffJobRole: role,
+      canProcessOrders: canStaffProcessOrders(role),
+      canViewDelivery: canStaffViewDelivery(role),
+      channels,
     };
   }
 
-  presentFromActivityDetail(
-    staffCall: JsonRecord,
-    activityDetail: JsonRecord,
-  ): JsonRecord {
-    const listEntry = this.presentCall(staffCall, activityDetail);
-    return this.presentDetail(activityDetail, staffCall, listEntry);
-  }
+  presentListRow(
+    raw: Record<string, unknown>,
+    role: StaffJobRole,
+    channel: StaffOrderChannel,
+  ): StaffPresentedOrderEntry | null {
+    const entryChannel = this.resolveChannel(raw);
+    if (entryChannel !== channel) return null;
 
-  private async enrichEntriesWithActivityDetails(
-    req: Request,
-    menuId: number,
-    calls: JsonRecord[],
-    entries: JsonRecord[],
-    index: Map<number, JsonRecord>,
-  ): Promise<JsonRecord[]> {
-    const out = [...entries];
-    const tasks: Array<{ idx: number; call: JsonRecord; entry: JsonRecord }> =
-      [];
+    const staffCallId = this.parseStaffCallIdFromList(raw);
+    if (staffCallId <= 0) return null;
 
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const call = calls[i];
-      if (!entry || !call) continue;
-      if (!needsDeliveryDetailEnrichment(entry)) continue;
-      if (!activityLogIdFromRow(index.get(Number(call.id)))) continue;
-      tasks.push({ idx: i, call, entry });
-    }
-
-    if (tasks.length === 0) return out;
-
-    const queue = [...tasks];
-    const workers = Array.from(
-      { length: Math.min(StaffOrderPresenterService.DETAIL_ENRICH_CONCURRENCY, queue.length) },
-      async () => {
-        while (queue.length) {
-          const task = queue.shift();
-          if (!task) break;
-          out[task.idx] = await this.enrichSingleEntryWithActivityDetail(
-            req,
-            menuId,
-            task.call,
-            task.entry,
-            index.get(Number(task.call.id)),
-          );
-        }
-      },
-    );
-
-    await Promise.all(workers);
-    return out;
-  }
-
-  private async enrichSingleEntryWithActivityDetail(
-    req: Request,
-    menuId: number,
-    staffCall: JsonRecord,
-    entry: JsonRecord,
-    listRow: JsonRecord | undefined,
-  ): Promise<JsonRecord> {
-    let merged = applyDeliveryFields(entry, listRow, staffCall);
-
-    const activityLogId = activityLogIdFromRow(listRow);
-    if (activityLogId == null) {
-      return merged;
-    }
-
-    if (!needsDeliveryDetailEnrichment(merged)) {
-      return merged;
-    }
-
-    const detail = await this.ensHttp.proxy({
-      method: 'GET',
-      path: `menus/${menuId}/activity-logs/${activityLogId}`,
-      req,
+    const activityLogId = this.parseActivityLogIdFromList(raw);
+    const items = this.parseItems(raw.items);
+    const actionDetails = this.parseActionDetails(raw.actionDetails);
+    const status = resolveListEntryStatus({
+      actionDetails,
+      status: raw.status as string | undefined,
     });
 
-    if (detail.status < 200 || detail.status >= 300 || !detail.data) {
-      return merged;
-    }
-
-    const body = detail.data as JsonRecord;
-    const rawEntry = (body.entry ?? body) as JsonRecord;
-    return this.presentDetail(rawEntry, staffCall, merged);
-  }
-
-  private presentDetail(
-    detail: JsonRecord,
-    staffCall: JsonRecord,
-    listEntry: JsonRecord,
-  ): JsonRecord {
-    const order =
-      detail.order && typeof detail.order === 'object'
-        ? (detail.order as JsonRecord)
-        : null;
-    const actions = Array.isArray(detail.actions) ? detail.actions : [];
-
-    const actionDetails = actions.map((a) => {
-      if (!a || typeof a !== 'object') return a;
-      const act = a as JsonRecord;
-      const actionName = String(act.action ?? act.status ?? '').trim();
-      const statusName = String(act.status ?? act.action ?? '').trim();
-      return {
-        action: actionName,
-        status: statusName,
-        waiterName: act.waiterName ?? '',
-        actorRole: act.actorRole ?? '',
-        time: act.time ?? '',
-        summaryEn: act.summaryEn ?? null,
-        summaryAr: act.summaryAr ?? null,
-      };
+    return this.buildEntry({
+      raw,
+      role,
+      channel: entryChannel,
+      staffCallId,
+      activityLogId,
+      status,
+      items,
+      actionDetails,
+      actions: null,
     });
-
-    const delivery = extractDeliveryCustomerFields(
-      order,
-      detail,
-      listEntry,
-      staffCall,
-    );
-
-    const merged: JsonRecord = applyDeliveryFields(
-      {
-        ...listEntry,
-        ...detail,
-        orderId: String(staffCall.id ?? listEntry.orderId),
-        type: delivery.type ?? listEntry.type ?? resolveOrderType(staffCall),
-        items:
-          Array.isArray(staffCall.items) && (staffCall.items as unknown[]).length
-            ? staffCall.items
-            : (listEntry.items ?? detail.items ?? order?.items ?? []),
-        totalPrice:
-          staffCall.orderTotal ??
-          listEntry.totalPrice ??
-          detail.totalPrice ??
-          order?.orderTotal ??
-          0,
-        actionDetails:
-          actionDetails.length > 0
-            ? actionDetails
-            : (listEntry.actionDetails ?? []),
-      },
-      order,
-      detail,
-      listEntry,
-      staffCall,
-    );
-
-    if (order) {
-      merged.order = order;
-    }
-    if (actions.length > 0) {
-      merged.actions = actions;
-    }
-
-    return merged;
   }
 
-  private presentCall(
-    staffCall: JsonRecord,
-    activity: JsonRecord | undefined,
-  ): JsonRecord {
-    if (!activity) {
-      return this.staffCallToEntry(staffCall);
-    }
+  presentDetail(
+    raw: Record<string, unknown>,
+    role: StaffJobRole,
+  ): StaffPresentedOrderEntry | null {
+    const channel = this.resolveChannel(raw);
+    const staffCallId = this.parseStaffCallId(raw);
+    if (staffCallId <= 0) return null;
 
-    const merged: JsonRecord = applyDeliveryFields(
-      {
-        ...activity,
-        orderId: String(staffCall.id ?? activity.orderId ?? ''),
-        menuId: staffCall.menuId ?? activity.menuId,
-        items:
-          Array.isArray(staffCall.items) && staffCall.items.length
-            ? staffCall.items
-            : activity.items,
-        totalPrice: staffCall.orderTotal ?? activity.totalPrice,
-        type:
-          firstText(activity.type, nestedOrder(activity)?.type) ??
-          resolveOrderType(staffCall),
-      },
-      activity,
-      nestedOrder(activity),
-      staffCall,
+    const activityLogId = this.parseActivityLogId(raw);
+    const order = (raw.order as Record<string, unknown> | undefined) ?? {};
+    const actions = Array.isArray(raw.actions)
+      ? (raw.actions as Array<Record<string, unknown>>)
+      : [];
+    const items = this.parseItems(raw.items ?? order.items);
+    const actionDetails = actions.map((a) => ({
+      status: a.status as string | undefined,
+      time: a.time as string | undefined,
+      waiterName: a.waiterName as string | undefined,
+    }));
+    const status = resolveLatestOrderStatus(
+      actions,
+      order as { status?: string },
     );
 
-    if (!hasText(merged.tableNumber) && staffCall.tableNumber != null) {
-      merged.tableNumber = staffCall.tableNumber;
-    }
-    if (!hasText(merged.tableNumber)) {
-      const nested = nestedOrder(staffCall);
-      if (nested?.tableNumber != null) {
-        merged.tableNumber = nested.tableNumber;
-      }
-    }
-
-    return merged;
+    return this.buildEntry({
+      raw: { ...raw, ...order },
+      role,
+      channel,
+      staffCallId,
+      activityLogId,
+      status,
+      items,
+      actionDetails,
+      actions,
+    });
   }
 
-  private staffCallToEntry(call: JsonRecord): JsonRecord {
-    const id = String(call.id ?? '');
-    const at = String(call.at ?? call.requestedAt ?? call.createdAt ?? '');
-    const status = String(call.status ?? 'pending')
+  private buildEntry(input: {
+    raw: Record<string, unknown>;
+    role: StaffJobRole;
+    channel: StaffOrderChannel;
+    staffCallId: number;
+    activityLogId: number | null;
+    status: StaffOrderStatus;
+    items: StaffPresentedOrderItem[];
+    actionDetails: Array<{
+      status?: string;
+      time?: string;
+      waiterName?: string;
+    }>;
+    actions: Array<Record<string, unknown>> | null;
+  }): StaffPresentedOrderEntry {
+    const totalPrice = this.resolveTotalPrice(input.raw, input.items);
+    const itemCount = input.items.reduce((sum, line) => sum + line.quantity, 0);
+    const availableActions = availableActionsForOrder(
+      input.status,
+      input.role,
+    );
+    const canEditItems =
+      input.role === 'cashier' &&
+      (input.status === 'pending' || input.status === 'confirmed') &&
+      itemCount > 0;
+
+    return {
+      id: String(input.activityLogId ?? input.staffCallId),
+      staffCallId: input.staffCallId,
+      activityLogId: input.activityLogId,
+      channel: input.channel,
+      status: input.status,
+      statusLabel: statusLabelFor(input.status),
+      tableNumber: this.stringOrNull(input.raw.tableNumber),
+      customerName: this.stringOrNull(input.raw.customerName),
+      customerPhone: this.stringOrNull(input.raw.customerPhone),
+      customerAddress: this.stringOrNull(input.raw.customerAddress),
+      orderNotes: this.stringOrNull(input.raw.orderNotes),
+      governorateId: this.numberOrNull(input.raw.governorateId),
+      governorateNameAr: this.stringOrNull(input.raw.governorateNameAr),
+      governorateNameEn: this.stringOrNull(input.raw.governorateNameEn),
+      deliveryFee: this.numberOrNull(input.raw.deliveryFee),
+      items: input.items,
+      itemCount,
+      totalPrice,
+      createdAt: this.resolveCreatedAt(input.actionDetails, input.raw),
+      actionDetails: input.actionDetails,
+      availableActions,
+      canEditItems,
+    };
+  }
+
+  filterByScope(
+    entries: StaffPresentedOrderEntry[],
+    scope: 'active' | 'history',
+  ): StaffPresentedOrderEntry[] {
+    if (scope === 'active') {
+      return entries.filter((entry) => isActiveStaffOrderStatus(entry.status));
+    }
+    return entries.filter((entry) => !isActiveStaffOrderStatus(entry.status));
+  }
+
+  private resolveChannel(raw: Record<string, unknown>): StaffOrderChannel {
+    const typeRaw = String(raw.type ?? '')
       .trim()
       .toLowerCase();
-    const items = Array.isArray(call.items) ? call.items : [];
-    const type = resolveOrderType(call);
-    const delivery = extractDeliveryCustomerFields(call);
-
-    return applyDeliveryFields(
-      {
-        id,
-        orderId: id,
-        menuId: call.menuId ?? null,
-        lastAction:
-          status === 'pending'
-            ? 'TABLE_CALL_CREATED'
-            : `TABLE_CALL_${status.toUpperCase()}`,
-        actionDetails: [{ status, time: at, waiterName: '' }],
-        customerName: call.customerName ?? null,
-        tableNumber: call.tableNumber ?? nestedOrder(call)?.tableNumber ?? null,
-        type,
-        items,
-        totalPrice: call.orderTotal ?? 0,
-      },
-      call,
-      delivery,
-    );
+    if (typeRaw === 'delivery') return 'delivery';
+    const table = String(raw.tableNumber ?? '')
+      .trim()
+      .toLowerCase();
+    if (table === 'delivery') return 'delivery';
+    return 'table';
   }
 
-  private async fetchActivityIndex(
-    req: Request,
-    menuId: number,
-    targetStaffCallIds?: Set<number>,
-  ): Promise<{
-    byStaffCallId: Map<number, JsonRecord>;
-    activityLogAccess: 'granted' | 'denied';
-  }> {
-    const byStaffCallId = new Map<number, JsonRecord>();
-    let accessDenied = false;
-    let anySuccess = false;
-
-    const queryVariants: Array<Record<string, unknown>> = [
-      { channel: 'delivery' },
-      { channel: 'table' },
-      {},
-    ];
-
-    const allTargetsFound = (): boolean => {
-      if (!targetStaffCallIds || targetStaffCallIds.size === 0) return false;
-      for (const id of targetStaffCallIds) {
-        if (!byStaffCallId.has(id)) return false;
-      }
-      return true;
-    };
-
-    for (const variant of queryVariants) {
-      if (accessDenied) break;
-      if (allTargetsFound()) break;
-
-      for (let page = 1; page <= StaffOrderPresenterService.MAX_ACTIVITY_PAGES; page++) {
-        const activity = await this.ensHttp.proxy({
-          method: 'GET',
-          path: `menus/${menuId}/activity-logs`,
-          req,
-          query: {
-            ...variant,
-            page,
-            limit: StaffOrderPresenterService.ACTIVITY_PAGE_LIMIT,
-          },
-        });
-
-        if (
-          activity.status === 403 ||
-          activity.status === 401 ||
-          activity.status === 404
-        ) {
-          accessDenied = true;
-          this.logger.debug(
-            `Activity logs denied for menuId=${menuId} (status=${activity.status}). ` +
-              'Delivery customer fields require cashier/casher staff or owner access on Express.',
-          );
-          break;
-        }
-
-        if (activity.status < 200 || activity.status >= 300 || !activity.data) {
-          break;
-        }
-
-        anySuccess = true;
-        const body = activity.data as JsonRecord;
-        const rows = (body.entries ?? body.calls) as unknown;
-        if (!Array.isArray(rows) || rows.length === 0) {
-          break;
-        }
-
-        for (const raw of rows) {
-          if (!raw || typeof raw !== 'object') continue;
-          const row = raw as JsonRecord;
-          const staffCallId = Number(row.orderId);
-          if (!Number.isFinite(staffCallId) || staffCallId <= 0) continue;
-          if (!byStaffCallId.has(staffCallId)) {
-            byStaffCallId.set(staffCallId, row);
-          }
-        }
-
-        const totalPages = Number(body.totalPages ?? 1);
-        if (!Number.isFinite(totalPages) || page >= totalPages) {
-          break;
-        }
-        if (allTargetsFound()) break;
-      }
-    }
-
-    return {
-      byStaffCallId,
-      activityLogAccess: anySuccess ? 'granted' : 'denied',
-    };
+  private parseStaffCallIdFromList(raw: Record<string, unknown>): number {
+    const orderId = Number(raw.orderId ?? 0);
+    if (Number.isFinite(orderId) && orderId > 0) return orderId;
+    return this.parseStaffCallId(raw);
   }
 
-  private extractStaffCalls(root: JsonRecord): JsonRecord[] {
-    if (Array.isArray(root.calls)) {
-      return root.calls.filter(
-        (c): c is JsonRecord => c != null && typeof c === 'object',
-      );
-    }
-    if (Array.isArray(root.entries)) {
-      return root.entries.filter(
-        (c): c is JsonRecord => c != null && typeof c === 'object',
-      );
-    }
-    if (root.id != null && root.menuId != null) {
-      return [root];
-    }
-    return [];
-  }
-
-  private resolveMenuId(calls: JsonRecord[]): number | null {
-    for (const call of calls) {
-      const menuId = Number(call.menuId);
-      if (Number.isFinite(menuId) && menuId > 0) return menuId;
+  private parseActivityLogIdFromList(raw: Record<string, unknown>): number | null {
+    const id = Number(raw.id ?? 0);
+    const orderId = Number(raw.orderId ?? 0);
+    if (Number.isFinite(id) && id > 0 && orderId > 0 && id !== orderId) {
+      return id;
     }
     return null;
   }
-}
 
-function nestedOrder(record: JsonRecord | undefined): JsonRecord | null {
-  if (!record) return null;
-  const order = record.order;
-  return order != null && typeof order === 'object' ? (order as JsonRecord) : null;
+  private parseStaffCallId(raw: Record<string, unknown>): number {
+    const fromOrderId = Number(raw.orderId ?? raw.staffCallId ?? 0);
+    if (Number.isFinite(fromOrderId) && fromOrderId > 0) return fromOrderId;
+    const fromId = Number(raw.id ?? 0);
+    return Number.isFinite(fromId) && fromId > 0 ? fromId : 0;
+  }
+
+  private parseActivityLogId(raw: Record<string, unknown>): number | null {
+    const fromList = this.parseActivityLogIdFromList(raw);
+    if (fromList != null) return fromList;
+    const id = Number(raw.id ?? 0);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  private parseItems(raw: unknown): StaffPresentedOrderItem[] {
+    if (!Array.isArray(raw)) return [];
+    const items: StaffPresentedOrderItem[] = [];
+    for (const line of raw) {
+      if (!line || typeof line !== 'object') continue;
+      const map = line as Record<string, unknown>;
+      const quantity = Math.max(1, Number(map.quantity ?? 1) || 1);
+      const price = Number(map.price ?? 0) || 0;
+      const total = Number(map.total ?? price * quantity) || price * quantity;
+      const name = String(map.name ?? 'Item').trim() || 'Item';
+      items.push({
+        menuItemId:
+          map.menuItemId != null ? Number(map.menuItemId) || null : null,
+        name,
+        quantity,
+        price,
+        total,
+        notes: this.stringOrNull(map.notes),
+        size:
+          map.size && typeof map.size === 'object'
+            ? (map.size as Record<string, unknown>)
+            : null,
+        variant:
+          map.variant && typeof map.variant === 'object'
+            ? (map.variant as Record<string, unknown>)
+            : null,
+      });
+    }
+    return items;
+  }
+
+  private parseActionDetails(raw: unknown) {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((detail) => {
+      const map = detail as Record<string, unknown>;
+      return {
+        status: map.status as string | undefined,
+        time: map.time as string | undefined,
+        waiterName: map.waiterName as string | undefined,
+      };
+    });
+  }
+
+  private resolveTotalPrice(
+    raw: Record<string, unknown>,
+    items: StaffPresentedOrderItem[],
+  ): number {
+    const candidates = [
+      raw.totalPrice,
+      raw.orderTotal,
+      (raw.order as Record<string, unknown> | undefined)?.orderTotal,
+    ];
+    for (const value of candidates) {
+      const num = Number(value);
+      if (Number.isFinite(num) && num > 0) return num;
+    }
+    const computed = items.reduce((sum, line) => sum + line.total, 0);
+    return computed > 0 ? computed : 0;
+  }
+
+  private resolveCreatedAt(
+    actionDetails: Array<{ time?: string }>,
+    raw: Record<string, unknown>,
+  ): string | null {
+    if (actionDetails.length > 0) {
+      const first = actionDetails.find((detail) => detail.time)?.time;
+      if (first) return first;
+    }
+    return this.stringOrNull(raw.createdAt ?? raw.updatedAt ?? raw.at);
+  }
+
+  private stringOrNull(value: unknown): string | null {
+    const text = String(value ?? '').trim();
+    return text.length > 0 ? text : null;
+  }
+
+  private numberOrNull(value: unknown): number | null {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
 }

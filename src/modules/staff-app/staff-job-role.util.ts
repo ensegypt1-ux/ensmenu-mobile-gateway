@@ -1,41 +1,32 @@
 import { Request } from 'express';
-import { ConfigService } from '@nestjs/config';
-import { verifyAccessTokenLocally } from '../../common/utils/jwt-payload.util';
-import { resolveOrderType } from './staff-order-delivery-enrichment.util';
+import jwt from 'jsonwebtoken';
 
 export type StaffJobRole = 'waiter' | 'cashier' | 'unknown';
 
 export function normalizeStaffJobRole(raw: unknown): StaffJobRole {
-  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  const value = String(raw ?? '')
+    .trim()
+    .toLowerCase();
   if (value === 'cashier' || value === 'casher') return 'cashier';
   if (value === 'waiter') return 'waiter';
   return 'unknown';
 }
 
-/** Job role from staff JWT (`staffJobRole` claim). Defaults to waiter when absent. */
-export function resolveStaffJobRoleFromRequest(
-  req: Request,
-  configService: ConfigService,
-): StaffJobRole {
-  const user = verifyAccessTokenLocally(req, configService);
-  if (!user) return 'unknown';
+/** Job role from staff JWT (`staffJobRole` claim). */
+export function staffJobRoleFromRequest(req: Request): StaffJobRole {
+  const authorization = req.headers.authorization;
+  if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
+    return 'unknown';
+  }
 
-  const fromJwt = normalizeStaffJobRole(user.staffJobRole);
-  if (fromJwt !== 'unknown') return fromJwt;
+  const token = authorization.slice('Bearer '.length).trim();
+  if (!token) return 'unknown';
 
-  return 'waiter';
-}
+  const decoded = jwt.decode(token);
+  if (!decoded || typeof decoded !== 'object') return 'unknown';
 
-export function canStaffAccessDelivery(jobRole: StaffJobRole): boolean {
-  return jobRole === 'cashier';
-}
-
-export function isDeliveryStaffCall(call: Record<string, unknown>): boolean {
-  return resolveOrderType(call) === 'delivery';
-}
-
-export function filterTableOnlyStaffCalls<T extends Record<string, unknown>>(
-  calls: T[],
-): T[] {
-  return calls.filter((call) => !isDeliveryStaffCall(call));
+  const role = normalizeStaffJobRole(
+    (decoded as Record<string, unknown>).staffJobRole,
+  );
+  return role === 'unknown' ? 'waiter' : role;
 }
