@@ -392,6 +392,12 @@ export class StaffOrderPresenterService {
     if (!hasText(merged.tableNumber) && staffCall.tableNumber != null) {
       merged.tableNumber = staffCall.tableNumber;
     }
+    if (!hasText(merged.tableNumber)) {
+      const nested = nestedOrder(staffCall);
+      if (nested?.tableNumber != null) {
+        merged.tableNumber = nested.tableNumber;
+      }
+    }
 
     return merged;
   }
@@ -417,7 +423,7 @@ export class StaffOrderPresenterService {
             : `TABLE_CALL_${status.toUpperCase()}`,
         actionDetails: [{ status, time: at, waiterName: '' }],
         customerName: call.customerName ?? null,
-        tableNumber: call.tableNumber ?? null,
+        tableNumber: call.tableNumber ?? nestedOrder(call)?.tableNumber ?? null,
         type,
         items,
         totalPrice: call.orderTotal ?? 0,
