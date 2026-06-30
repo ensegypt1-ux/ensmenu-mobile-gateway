@@ -6,6 +6,7 @@ import {
   isCashierOnlyAction,
   StaffOrderActionType,
 } from './staff-order-actions.util';
+import { normalizeStaffUpstreamError } from './staff-order-errors.util';
 import {
   StaffJobRole,
   normalizeStaffJobRole,
@@ -16,6 +17,7 @@ import {
   StaffOrderPresenterService,
   StaffPresentedDetailResult,
   StaffPresentedListResult,
+  StaffPresentedOrderEntry,
 } from './staff-order-presenter.service';
 import { orderStatusFromAction } from './staff-order-status.util';
 
@@ -95,7 +97,7 @@ export class StaffOrdersFlowService {
         ? payload.calls
         : [];
 
-    const presented = rows
+    let presented = rows
       .map((row) =>
         this.presenter.presentListRow(
           row as Record<string, unknown>,
@@ -103,7 +105,9 @@ export class StaffOrdersFlowService {
           channel,
         ),
       )
-      .filter((entry): entry is NonNullable<typeof entry> => entry != null);
+      .filter((entry): entry is StaffPresentedOrderEntry => entry != null);
+
+    presented = await this.hydrateListEntries(req, menuId, role, channel, presented);
 
     const scoped = this.presenter.filterByScope(presented, scope);
     const total = Number(payload.total ?? scoped.length) || scoped.length;
@@ -159,33 +163,7 @@ export class StaffOrdersFlowService {
     }
 
     if (!detailRaw) {
-      const call = await this.ensHttp.proxy({
-        method: 'GET',
-        path: `staff-auth/table-calls/${staffCallId}`,
-        req,
-      });
-      const callBody = call.data as Record<string, unknown> | null;
-      const callData =
-        callBody?.call && typeof callBody.call === 'object'
-          ? (callBody.call as Record<string, unknown>)
-          : callBody;
-      if (callData && typeof callData === 'object') {
-        detailRaw = {
-          ...callData,
-          orderId: callData.id ?? staffCallId,
-          id: activityLogId > 0 ? activityLogId : callData.id,
-          type: callData.type,
-          totalPrice: callData.orderTotal,
-          items: callData.items,
-          status: callData.status,
-          actionDetails: [
-            {
-              status: callData.status,
-              time: callData.at ?? callData.requestedAt,
-            },
-          ],
-        };
-      }
+      detailRaw = await this.fetchTableCallRaw(req, staffCallId);
     }
 
     if (!detailRaw) {
@@ -270,6 +248,8 @@ export class StaffOrdersFlowService {
       activityLogId,
     );
 
+    let upstream: EnsHttpResult;
+
     if (
       role === 'cashier' &&
       logId > 0 &&
@@ -278,35 +258,44 @@ export class StaffOrdersFlowService {
         normalizedAction === 'TABLE_CALL_PREPARED' ||
         normalizedAction === 'TABLE_CALL_DELIVERED')
     ) {
-      return this.ensHttp.proxy({
+      upstream = await this.ensHttp.proxy({
         method: 'POST',
         path: `menus/${menuId}/activity-logs/${logId}/actions`,
         req,
         body: { action: normalizedAction },
       });
-    }
-
-    if (
+    } else if (
       normalizedAction === 'TABLE_CALL_CONFIRMED' ||
       normalizedAction === 'TABLE_CALL_CANCELLED'
     ) {
       const status = orderStatusFromAction(normalizedAction);
-      return this.ensHttp.proxy({
+      upstream = await this.ensHttp.proxy({
         method: 'PATCH',
         path: `staff-auth/table-calls/${staffCallId}/status`,
         req,
         body: { status },
       });
+    } else {
+      return {
+        status: 403,
+        data: {
+          error: 'Action not allowed for your staff role',
+          errorAr: 'هذا الإجراء غير مسموح لدورك الوظيفي',
+          code: 'STAFF_ACTION_DENIED',
+        },
+      };
     }
 
-    return {
-      status: 403,
-      data: {
-        error: 'Action not allowed for your staff role',
-        errorAr: 'هذا الإجراء غير مسموح لدورك الوظيفي',
-        code: 'STAFF_ACTION_DENIED',
-      },
-    };
+    if (upstream.status >= 400) {
+      return normalizeStaffUpstreamError(upstream);
+    }
+
+    return this.presentOrderMutation(
+      req,
+      staffCallId,
+      menuId,
+      activityLogId,
+    );
   }
 
   async getCapabilities(req: Request) {
@@ -314,6 +303,163 @@ export class StaffOrdersFlowService {
     return {
       staffJobRole: role,
       capabilities: this.presenter.capabilitiesFor(role),
+    };
+  }
+
+  async patchOrderItems(
+    req: Request,
+    staffCallId: number,
+    menuId: number,
+    items: unknown,
+    activityLogId?: number,
+  ): Promise<EnsHttpResult> {
+    if (menuId <= 0 || staffCallId <= 0) {
+      return {
+        status: 400,
+        data: {
+          error: 'Invalid order payload',
+          code: 'INVALID_ORDER',
+        },
+      };
+    }
+
+    const upstream = await this.ensHttp.proxy({
+      method: 'PATCH',
+      path: `staff-auth/table-calls/${staffCallId}/items`,
+      req,
+      body: { items },
+    });
+
+    if (upstream.status >= 400) {
+      return normalizeStaffUpstreamError(upstream);
+    }
+
+    return this.presentOrderMutation(
+      req,
+      staffCallId,
+      menuId,
+      activityLogId,
+    );
+  }
+
+  private async presentOrderMutation(
+    req: Request,
+    staffCallId: number,
+    menuId: number,
+    activityLogId?: number,
+  ): Promise<EnsHttpResult> {
+    const presented = await this.getOrder(req, staffCallId, {
+      menuId,
+      activityLogId: activityLogId ?? 0,
+    });
+
+    if (presented.denied) {
+      return {
+        status: presented.httpStatus,
+        data: presented.data,
+      };
+    }
+
+    return {
+      status: 200,
+      data: presented.data,
+    };
+  }
+
+  private async hydrateListEntries(
+    req: Request,
+    menuId: number,
+    role: StaffJobRole,
+    channel: StaffOrderChannel,
+    entries: StaffPresentedOrderEntry[],
+  ): Promise<StaffPresentedOrderEntry[]> {
+    if (entries.length === 0) return entries;
+
+    const pendingIndex =
+      channel === 'table'
+        ? await this.fetchPendingTableCallsIndex(req)
+        : new Map<number, Record<string, unknown>>();
+
+    const sparse = entries.filter((entry) => entry.items.length === 0);
+    const detailFetches = sparse
+      .filter((entry) => !pendingIndex.has(entry.staffCallId))
+      .slice(0, 20)
+      .map(async (entry) => {
+        const raw = await this.fetchTableCallRaw(req, entry.staffCallId);
+        return { staffCallId: entry.staffCallId, raw };
+      });
+
+    const fetched = await Promise.all(detailFetches);
+    const detailIndex = new Map<number, Record<string, unknown>>();
+    for (const row of fetched) {
+      if (row.raw) detailIndex.set(row.staffCallId, row.raw);
+    }
+
+    return entries.map((entry) => {
+      const pending = pendingIndex.get(entry.staffCallId);
+      if (pending) {
+        return this.presenter.mergeCallHydration(entry, pending, role);
+      }
+      const detail = detailIndex.get(entry.staffCallId);
+      if (detail) {
+        return this.presenter.mergeCallHydration(entry, detail, role);
+      }
+      return entry;
+    });
+  }
+
+  private async fetchPendingTableCallsIndex(
+    req: Request,
+  ): Promise<Map<number, Record<string, unknown>>> {
+    const upstream = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'staff-auth/table-calls',
+      req,
+    });
+    const payload = (upstream.data ?? {}) as Record<string, unknown>;
+    const calls = Array.isArray(payload.calls) ? payload.calls : [];
+    const index = new Map<number, Record<string, unknown>>();
+    for (const call of calls) {
+      if (!call || typeof call !== 'object') continue;
+      const map = call as Record<string, unknown>;
+      const id = Number(map.id ?? 0);
+      if (Number.isFinite(id) && id > 0) {
+        index.set(id, map);
+      }
+    }
+    return index;
+  }
+
+  private async fetchTableCallRaw(
+    req: Request,
+    staffCallId: number,
+  ): Promise<Record<string, unknown> | null> {
+    const call = await this.ensHttp.proxy({
+      method: 'GET',
+      path: `staff-auth/table-calls/${staffCallId}`,
+      req,
+    });
+    if (call.status >= 400) return null;
+
+    const callBody = call.data as Record<string, unknown> | null;
+    const callData =
+      callBody?.call && typeof callBody.call === 'object'
+        ? (callBody.call as Record<string, unknown>)
+        : callBody;
+    if (!callData || typeof callData !== 'object') return null;
+
+    return {
+      ...callData,
+      orderId: callData.id ?? staffCallId,
+      totalPrice: callData.orderTotal,
+      items: callData.items,
+      status: callData.status,
+      actionDetails: [
+        {
+          status: callData.status,
+          time: callData.at ?? callData.requestedAt,
+        },
+      ],
     };
   }
 

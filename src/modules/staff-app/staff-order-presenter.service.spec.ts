@@ -47,6 +47,42 @@ describe('Staff order presenter', () => {
     ]);
   });
 
+  it('allows item edits for waiter on pending orders', () => {
+    const entry = presenter.presentListRow(
+      {
+        id: '12',
+        orderId: '57',
+        type: 'table',
+        tableNumber: '5',
+        totalPrice: 40,
+        items: [{ name: 'Coffee', quantity: 1, price: 40, total: 40 }],
+        actionDetails: [{ status: 'pending', time: '2026-01-01T10:00:00Z' }],
+      },
+      'waiter',
+      'table',
+    );
+
+    expect(entry!.canEditItems).toBe(true);
+  });
+
+  it('blocks item edits after prepared', () => {
+    const entry = presenter.presentListRow(
+      {
+        id: '13',
+        orderId: '58',
+        type: 'table',
+        tableNumber: '6',
+        totalPrice: 40,
+        items: [{ name: 'Coffee', quantity: 1, price: 40, total: 40 }],
+        actionDetails: [{ status: 'prepared', time: '2026-01-01T10:00:00Z' }],
+      },
+      'cashier',
+      'table',
+    );
+
+    expect(entry!.canEditItems).toBe(false);
+  });
+
   it('resolves list status from action details', () => {
     const status = resolveListEntryStatus({
       actionDetails: [{ status: 'prepared' }],
@@ -55,5 +91,10 @@ describe('Staff order presenter', () => {
     expect(availableActionsForOrder(status, 'cashier')).toEqual([
       expect.objectContaining({ action: 'TABLE_CALL_DELIVERED' }),
     ]);
+  });
+
+  it('exposes edit capability for staff roles', () => {
+    expect(presenter.capabilitiesFor('waiter').canEditItems).toBe(true);
+    expect(presenter.capabilitiesFor('cashier').canEditItems).toBe(true);
   });
 });

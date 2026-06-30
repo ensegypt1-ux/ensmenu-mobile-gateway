@@ -56,6 +56,7 @@ export type StaffOrderCapabilities = {
   staffJobRole: StaffJobRole;
   canProcessOrders: boolean;
   canViewDelivery: boolean;
+  canEditItems: boolean;
   channels: StaffOrderChannel[];
 };
 
@@ -89,7 +90,62 @@ export class StaffOrderPresenterService {
       staffJobRole: role,
       canProcessOrders: canStaffProcessOrders(role),
       canViewDelivery: canStaffViewDelivery(role),
+      canEditItems: true,
       channels,
+    };
+  }
+
+  presentTableCallRow(
+    raw: Record<string, unknown>,
+    role: StaffJobRole,
+  ): StaffPresentedOrderEntry | null {
+    const channel = this.resolveChannel(raw);
+    const staffCallId = this.parseStaffCallId(raw);
+    if (staffCallId <= 0) return null;
+
+    const items = this.parseItems(raw.items);
+    const statusRaw = String(raw.status ?? 'pending').trim().toLowerCase();
+    const actionDetails = this.parseActionDetails([
+      { status: statusRaw, time: String(raw.at ?? raw.requestedAt ?? '') },
+    ]);
+    const status = resolveListEntryStatus({
+      actionDetails,
+      status: statusRaw,
+    });
+
+    return this.buildEntry({
+      raw,
+      role,
+      channel,
+      staffCallId,
+      activityLogId: null,
+      status,
+      items,
+      actionDetails,
+      actions: null,
+    });
+  }
+
+  mergeCallHydration(
+    entry: StaffPresentedOrderEntry,
+    call: Record<string, unknown>,
+    role: StaffJobRole,
+  ): StaffPresentedOrderEntry {
+    const hydrated = this.presentTableCallRow(
+      {
+        ...call,
+        orderId: call.id ?? entry.staffCallId,
+      },
+      role,
+    );
+    if (!hydrated) return entry;
+    if (entry.items.length > 0 && hydrated.items.length === 0) {
+      return entry;
+    }
+    return {
+      ...hydrated,
+      activityLogId: entry.activityLogId ?? hydrated.activityLogId,
+      id: entry.id,
     };
   }
 
@@ -184,9 +240,7 @@ export class StaffOrderPresenterService {
       input.role,
     );
     const canEditItems =
-      input.role === 'cashier' &&
-      (input.status === 'pending' || input.status === 'confirmed') &&
-      itemCount > 0;
+      input.status === 'pending' || input.status === 'confirmed';
 
     return {
       id: String(input.activityLogId ?? input.staffCallId),
