@@ -17,6 +17,21 @@ import {
   activityLogIdFromRow,
   resolveOrderType,
 } from './staff-order-delivery-enrichment.util';
+import {
+  buildSubmissionView,
+  cashierCanActOnPending,
+  enrichRowWithSubmission,
+  matchesStaffQueueFilter,
+  parseStaffQueueFilter,
+  requiresWaiterSubmission,
+  resolveLifecycleStatus,
+  visibleToCashierActive,
+  type StaffQueueFilter,
+} from './staff-order-gate.util';
+import {
+  StaffOrderSubmissionService,
+  type StaffOrderSubmissionRecord,
+} from './staff-order-submission.service';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -47,6 +62,7 @@ export class StaffOrdersFlowService {
     private readonly ensHttp: EnsHttpService,
     private readonly presenter: StaffOrderPresenterService,
     private readonly configService: ConfigService,
+    private readonly submissions: StaffOrderSubmissionService,
   ) {}
 
   /** JWT `staffJobRole` first; falls back to `staff-auth/me` when absent. */
@@ -67,20 +83,203 @@ export class StaffOrdersFlowService {
     return canStaffAccessDelivery(role) && Number.isFinite(menuId) && menuId > 0;
   }
 
-  /** Waiters may read orders but must not mutate them via staff-auth routes. */
-  async denyWaiterOrderMutation(req: Request) {
+  /** Block waiter from cashier-only mutations (accept, cancel, put, status). */
+  async denyWaiterCashierMutation(req: Request) {
     const role = await this.resolveRole(req);
-    if (!canStaffAccessDelivery(role)) {
+    if (canStaffAccessDelivery(role)) return null;
+    return {
+      status: 403,
+      data: {
+        error: 'Order actions require cashier staff role',
+        errorAr: 'إجراءات الطلبات تتطلب دور الكاشير',
+        code: 'STAFF_ACTION_DENIED',
+      },
+    };
+  }
+
+  /** Waiter may edit items only before sending to cashier. */
+  async denyWaiterItemEdit(
+    req: Request,
+    staffCallId: number,
+    menuId: number,
+  ) {
+    const role = await this.resolveRole(req);
+    if (canStaffAccessDelivery(role)) return null;
+
+    const snap = await this.fetchStaffCallSnapshot(req, staffCallId);
+    if (!snap) {
       return {
-        status: 403,
+        status: 404,
         data: {
-          error: 'Order actions require cashier staff role',
-          errorAr: 'إجراءات الطلبات تتطلب دور الكاشير',
-          code: 'STAFF_ACTION_DENIED',
+          error: 'Order not found',
+          errorAr: 'الطلب غير موجود',
+          code: 'ORDER_NOT_FOUND',
         },
       };
     }
+
+    const presented = await this.presenter.presentOnePayload(req, snap);
+    const entry = (presented.data.entry ?? presented.data) as JsonRecord;
+    const status = resolveLifecycleStatus(entry);
+
+    if (status !== 'pending') {
+      return {
+        status: 409,
+        data: {
+          error: 'Order is no longer editable by waiter',
+          errorAr: 'لا يمكن للنادل تعديل الطلب بعد الإرسال',
+          code: 'WAITER_EDIT_DENIED',
+        },
+      };
+    }
+
+    if (
+      requiresWaiterSubmission(entry) &&
+      this.submissions.isSubmitted(menuId, staffCallId)
+    ) {
+      return {
+        status: 409,
+        data: {
+          error: 'Order already submitted to cashier',
+          errorAr: 'تم إرسال الطلب للكاشير',
+          code: 'ALREADY_SUBMITTED',
+        },
+      };
+    }
+
     return null;
+  }
+
+  private async fetchStaffCallSnapshot(
+    req: Request,
+    staffCallId: number,
+  ): Promise<JsonRecord | null> {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: `staff-auth/table-calls/${staffCallId}`,
+      req,
+    });
+    if (result.status < 200 || result.status >= 300 || !result.data) {
+      return null;
+    }
+    return result.data as JsonRecord;
+  }
+
+  private submissionForRow(
+    menuId: number,
+    row: JsonRecord,
+  ): StaffOrderSubmissionRecord | null {
+    const staffCallId = Number(row.orderId ?? row.id);
+    if (!Number.isFinite(staffCallId) || staffCallId <= 0) return null;
+    return this.submissions.get(menuId, staffCallId);
+  }
+
+  private enrichEntriesWithGate(
+    menuId: number,
+    rows: JsonRecord[],
+  ): JsonRecord[] {
+    if (!Number.isFinite(menuId) || menuId <= 0) return rows;
+    return rows.map((row) => {
+      const submission = this.submissionForRow(menuId, row);
+      return enrichRowWithSubmission(
+        row,
+        submission
+          ? {
+              submittedAt: submission.submittedAt,
+              submittedByStaffId: submission.submittedByStaffId,
+              submittedByStaffName: submission.submittedByStaffName,
+            }
+          : null,
+      );
+    });
+  }
+
+  private filterPresentedRows(
+    role: StaffJobRole,
+    rows: JsonRecord[],
+    query: Record<string, unknown>,
+    upstreamPath: string,
+  ): JsonRecord[] {
+    const staffQueue = parseStaffQueueFilter(query.staffQueue);
+
+    if (staffQueue) {
+      return rows.filter((row) => matchesStaffQueueFilter(row, staffQueue));
+    }
+
+    if (role === 'waiter') {
+      return rows.filter((row) => {
+        const phase = String(row.mobileQueuePhase ?? '');
+        return phase !== 'cashier_pending' || resolveOrderType(row) === 'delivery';
+      });
+    }
+
+    if (role === 'cashier' && upstreamPath.includes('table-calls/history')) {
+      return rows;
+    }
+
+    if (role === 'cashier') {
+      return rows.filter((row) => visibleToCashierActive(row));
+    }
+
+    return rows;
+  }
+
+  private applyGateToPresented(
+    req: Request,
+    role: StaffJobRole,
+    query: Record<string, unknown>,
+    upstreamPath: string,
+    presented: StaffOrderPresentResult,
+    menuId: number,
+  ): StaffOrderPresentResult {
+    let entries = this.extractCalls(presented.data);
+    if (entries.length === 0 && Array.isArray(presented.data.entries)) {
+      entries = presented.data.entries as JsonRecord[];
+    }
+
+    const resolvedMenuId =
+      Number.isFinite(menuId) && menuId > 0
+        ? menuId
+        : this.parseMenuId(query);
+
+    const enriched = this.enrichEntriesWithGate(resolvedMenuId, entries);
+    const filtered = this.filterPresentedRows(
+      role,
+      enriched,
+      query,
+      upstreamPath,
+    );
+
+    const entry = presented.data.entry;
+    let enrichedEntry = entry;
+    if (entry && typeof entry === 'object') {
+      const submission = this.submissionForRow(
+        resolvedMenuId,
+        entry as JsonRecord,
+      );
+      enrichedEntry = enrichRowWithSubmission(
+        entry as JsonRecord,
+        submission
+          ? {
+              submittedAt: submission.submittedAt,
+              submittedByStaffId: submission.submittedByStaffId,
+              submittedByStaffName: submission.submittedByStaffName,
+            }
+          : null,
+      );
+    }
+
+    return {
+      ...presented,
+      data: {
+        ...presented.data,
+        entries: filtered,
+        calls: filtered,
+        total: filtered.length,
+        ...(enrichedEntry ? { entry: enrichedEntry } : {}),
+      },
+      staffJobRole: role,
+    };
   }
 
   parseMenuId(query: Record<string, unknown>, body?: unknown): number {
@@ -283,7 +482,7 @@ export class StaffOrdersFlowService {
 
     const filtered = this.filterEntriesByChannel(entries, channel);
 
-    return {
+    const base: StaffOrderPresentResult = {
       data: {
         ...presented.data,
         entries: filtered,
@@ -294,6 +493,15 @@ export class StaffOrdersFlowService {
       staffJobRole: role,
       httpStatus: 200,
     };
+
+    return this.applyGateToPresented(
+      req,
+      role,
+      query,
+      upstreamPath,
+      base,
+      this.parseMenuId(query),
+    );
   }
 
   /** Cashier: activity-logs with staff-auth fallback. Waiter: staff-auth table-calls. */
@@ -337,12 +545,19 @@ export class StaffOrdersFlowService {
           usedFallback: false,
         });
 
-        return {
-          data: result.data as JsonRecord,
-          enrichment: 'activity-log',
-          staffJobRole: role,
-          httpStatus: 200,
-        };
+        return this.applyGateToPresented(
+          req,
+          role,
+          query,
+          upstreamPath,
+          {
+            data: result.data as JsonRecord,
+            enrichment: 'activity-log',
+            staffJobRole: role,
+            httpStatus: 200,
+          },
+          menuId,
+        );
       }
 
       const fallback = await this.presentStaffAuthList(
@@ -437,11 +652,18 @@ export class StaffOrdersFlowService {
               staffCall,
               rawEntry,
             );
-            return {
-              data: { entry: listEntry, ...staffCall, entries: [listEntry] },
-              enrichment: 'activity-log-detail',
-              staffJobRole: role,
-            };
+            return this.applyGateToPresented(
+              req,
+              role,
+              { menuId },
+              'staff-auth/table-calls',
+              {
+                data: { entry: listEntry, ...staffCall, entries: [listEntry] },
+                enrichment: 'activity-log-detail',
+                staffJobRole: role,
+              },
+              menuId,
+            );
           }
         }
       }
@@ -454,7 +676,15 @@ export class StaffOrdersFlowService {
     });
 
     if (result.status >= 200 && result.status < 300) {
-      return this.presenter.presentOnePayload(req, result.data);
+      const presented = await this.presenter.presentOnePayload(req, result.data);
+      return this.applyGateToPresented(
+        req,
+        role,
+        { menuId: menuIdFromQuery },
+        'staff-auth/table-calls',
+        presented,
+        menuIdFromQuery,
+      );
     }
 
     return {
@@ -508,6 +738,142 @@ export class StaffOrdersFlowService {
     return null;
   }
 
+  /** Waiter sends reviewed table order to cashier queue (gateway gate store). */
+  async submitToCashier(
+    req: Request,
+    staffCallId: number,
+    menuId: number,
+  ) {
+    const role = await this.resolveRole(req);
+    if (role !== 'waiter') {
+      return {
+        status: 403,
+        data: {
+          error: 'Only waiters may submit orders to cashier',
+          errorAr: 'فقط النادل يمكنه إرسال الطلب للكاشير',
+          code: 'STAFF_ACTION_DENIED',
+        },
+      };
+    }
+
+    if (!Number.isFinite(menuId) || menuId <= 0) {
+      return {
+        status: 400,
+        data: {
+          error: 'menuId is required',
+          errorAr: 'menuId مطلوب',
+          code: 'MENU_ID_REQUIRED',
+        },
+      };
+    }
+
+    const snap = await this.fetchStaffCallSnapshot(req, staffCallId);
+    if (!snap) {
+      return {
+        status: 404,
+        data: {
+          error: 'Order not found',
+          errorAr: 'الطلب غير موجود',
+          code: 'ORDER_NOT_FOUND',
+        },
+      };
+    }
+
+    const presentedSnap = await this.presenter.presentOnePayload(req, snap);
+    const entry = (presentedSnap.data.entry ?? presentedSnap.data) as JsonRecord;
+    const status = resolveLifecycleStatus(entry);
+
+    if (status !== 'pending') {
+      return {
+        status: 409,
+        data: {
+          error: 'Only pending orders can be submitted to cashier',
+          errorAr: 'يمكن إرسال الطلبات قيد الانتظار فقط',
+          code: 'INVALID_ORDER_STATE',
+        },
+      };
+    }
+
+    if (!requiresWaiterSubmission(entry)) {
+      return {
+        status: 409,
+        data: {
+          error: 'This order does not require waiter submission',
+          errorAr: 'هذا الطلب لا يتطلب مراجعة النادل',
+          code: 'SUBMISSION_NOT_REQUIRED',
+        },
+      };
+    }
+
+    if (this.submissions.isSubmitted(menuId, staffCallId)) {
+      return {
+        status: 409,
+        data: {
+          error: 'Order already submitted to cashier',
+          errorAr: 'تم إرسال الطلب للكاشير مسبقاً',
+          code: 'ALREADY_SUBMITTED',
+        },
+      };
+    }
+
+    const user = verifyAccessTokenLocally(req, this.configService);
+    const staffId = Number(user?.userId);
+    if (!Number.isFinite(staffId) || staffId <= 0) {
+      return {
+        status: 403,
+        data: {
+          error: 'Staff identity required',
+          errorAr: 'هوية الموظف مطلوبة',
+          code: 'STAFF_ACTION_DENIED',
+        },
+      };
+    }
+
+    let staffName = '';
+    const me = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'staff-auth/me',
+      req,
+    });
+    if (me.status >= 200 && me.status < 300 && me.data && typeof me.data === 'object') {
+      const staff = (me.data as JsonRecord).staff;
+      if (staff && typeof staff === 'object') {
+        staffName = String((staff as JsonRecord).name ?? '').trim();
+      }
+    }
+
+    const submittedAt = new Date().toISOString();
+    await this.submissions.recordSubmission({
+      menuId,
+      staffCallId,
+      submittedAt,
+      submittedByStaffId: staffId,
+      submittedByStaffName: staffName || undefined,
+    });
+
+    const items = Array.isArray(snap.items) ? snap.items : [];
+    if (items.length > 0) {
+      await this.ensHttp.proxy({
+        method: 'PATCH',
+        path: `staff-auth/table-calls/${staffCallId}/items`,
+        req,
+        body: { items },
+      });
+    }
+
+    const presented = await this.getOrder(req, staffCallId, menuId);
+    return {
+      status: 200,
+      data: {
+        ok: true,
+        submittedToCashierAt: submittedAt,
+        submittedByStaffId: staffId,
+        submittedByStaffName: staffName || null,
+        order: presented.data,
+      },
+    };
+  }
+
   /** Mirrors web `POST /menus/:menuId/activity-logs/:entryId/actions`. */
   async postOrderAction(
     req: Request,
@@ -536,6 +902,41 @@ export class StaffOrdersFlowService {
           code: 'MENU_ID_REQUIRED',
         },
       };
+    }
+
+    const snap = await this.fetchStaffCallSnapshot(req, staffCallId);
+    if (snap) {
+      const presentedSnap = await this.presenter.presentOnePayload(req, snap);
+      const entry = (presentedSnap.data.entry ??
+        presentedSnap.data) as JsonRecord;
+      const submission = this.submissionForRow(menuId, entry);
+      const enriched = enrichRowWithSubmission(
+        entry,
+        submission
+          ? {
+              submittedAt: submission.submittedAt,
+              submittedByStaffId: submission.submittedByStaffId,
+              submittedByStaffName: submission.submittedByStaffName,
+            }
+          : null,
+      );
+      const pendingActions = new Set([
+        'TABLE_CALL_CONFIRMED',
+        'TABLE_CALL_CANCELLED',
+      ]);
+      if (
+        pendingActions.has(action) &&
+        !cashierCanActOnPending(enriched)
+      ) {
+        return {
+          status: 409,
+          data: {
+            error: 'Order must be submitted by waiter before cashier action',
+            errorAr: 'يجب على النادل إرسال الطلب قبل إجراء الكاشير',
+            code: 'WAITER_SUBMISSION_REQUIRED',
+          },
+        };
+      }
     }
 
     const activityLogId = await this.resolveActivityLogId(

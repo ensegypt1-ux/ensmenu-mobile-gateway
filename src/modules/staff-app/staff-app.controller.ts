@@ -172,7 +172,7 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    const denied = await this.ordersFlow.denyWaiterCashierMutation(req);
     if (denied) {
       sendProxyResponse(res, denied, this.assetUrlService);
       return;
@@ -193,7 +193,7 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    const denied = await this.ordersFlow.denyWaiterCashierMutation(req);
     if (denied) {
       sendProxyResponse(res, denied, this.assetUrlService);
       return;
@@ -239,6 +239,23 @@ export class StaffAppController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @Post('orders/:id/submit-to-cashier')
+  async submitToCashier(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const staffCallId = Number(id);
+    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const result = await this.ordersFlow.submitToCashier(
+      req,
+      staffCallId,
+      menuId,
+    );
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
   @Patch('orders/:id/items')
   async patchItems(
     @Req() req: Request,
@@ -246,7 +263,12 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const denied = await this.ordersFlow.denyWaiterItemEdit(
+      req,
+      Number(id),
+      menuId,
+    );
     if (denied) {
       sendProxyResponse(res, denied, this.assetUrlService);
       return;
