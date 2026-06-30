@@ -22,3 +22,4 @@ yarn-error.log*
 # tests
 /coverage
 .nyc_output
+firebasesdk.json
