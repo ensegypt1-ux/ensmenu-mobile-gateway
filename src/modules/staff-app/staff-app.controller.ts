@@ -172,6 +172,11 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
+    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    if (denied) {
+      sendProxyResponse(res, denied, this.assetUrlService);
+      return;
+    }
     const result = await this.ensHttp.proxy({
       method: 'PUT',
       path: `staff-auth/table-calls/${id}`,
@@ -188,6 +193,11 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
+    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    if (denied) {
+      sendProxyResponse(res, denied, this.assetUrlService);
+      return;
+    }
     const result = await this.ensHttp.proxy({
       method: 'PATCH',
       path: `staff-auth/table-calls/${id}/status`,
@@ -236,6 +246,11 @@ export class StaffAppController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
+    const denied = await this.ordersFlow.denyWaiterOrderMutation(req);
+    if (denied) {
+      sendProxyResponse(res, denied, this.assetUrlService);
+      return;
+    }
     const result = await this.ensHttp.proxy({
       method: 'PATCH',
       path: `staff-auth/table-calls/${id}/items`,

@@ -67,6 +67,22 @@ export class StaffOrdersFlowService {
     return canStaffAccessDelivery(role) && Number.isFinite(menuId) && menuId > 0;
   }
 
+  /** Waiters may read orders but must not mutate them via staff-auth routes. */
+  async denyWaiterOrderMutation(req: Request) {
+    const role = await this.resolveRole(req);
+    if (!canStaffAccessDelivery(role)) {
+      return {
+        status: 403,
+        data: {
+          error: 'Order actions require cashier staff role',
+          errorAr: 'إجراءات الطلبات تتطلب دور الكاشير',
+          code: 'STAFF_ACTION_DENIED',
+        },
+      };
+    }
+    return null;
+  }
+
   parseMenuId(query: Record<string, unknown>, body?: unknown): number {
     const fromQuery = Number(query.menuId);
     if (Number.isFinite(fromQuery) && fromQuery > 0) return fromQuery;

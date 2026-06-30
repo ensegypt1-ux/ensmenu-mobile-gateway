@@ -13,6 +13,10 @@ export default () => ({
     10,
   ),
   publicMenuHostSuffix: process.env.PUBLIC_MENU_HOST_SUFFIX ?? '.ensmenu.com',
+  upstreamDebugLog:
+    process.env.UPSTREAM_DEBUG_LOG === 'true' ||
+    (process.env.UPSTREAM_DEBUG_LOG !== 'false' &&
+      (process.env.NODE_ENV ?? 'development') !== 'production'),
   upstreamTimeoutMs: parseInt(process.env.UPSTREAM_TIMEOUT_MS ?? '30000', 10),
   importTimeoutMs: parseInt(process.env.IMPORT_TIMEOUT_MS ?? '90000', 10),
   uploadMaxMb: parseInt(process.env.UPLOAD_MAX_MB ?? '10', 10),

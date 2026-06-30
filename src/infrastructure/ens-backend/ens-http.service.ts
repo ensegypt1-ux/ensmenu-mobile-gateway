@@ -1,5 +1,9 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError, AxiosRequestConfig, Method } from 'axios';
 import { Request } from 'express';
@@ -33,8 +37,10 @@ export interface EnsProxyOptions {
  */
 @Injectable()
 export class EnsHttpService {
+  private readonly logger = new Logger(EnsHttpService.name);
   private readonly apiBaseUrl: string;
   private readonly defaultTimeoutMs: number;
+  private readonly upstreamDebugLog: boolean;
 
   constructor(
     private readonly httpService: HttpService,
@@ -45,6 +51,8 @@ export class EnsHttpService {
     this.apiBaseUrl = `${backendUrl}/api`;
     this.defaultTimeoutMs =
       this.configService.get<number>('upstreamTimeoutMs') ?? 30000;
+    this.upstreamDebugLog =
+      this.configService.get<boolean>('upstreamDebugLog') ?? false;
   }
 
   buildUrl(path: string, query?: Record<string, unknown>): string {
@@ -65,6 +73,46 @@ export class EnsHttpService {
     return url.toString();
   }
 
+  private summarizeUpstreamBody(data: unknown): string {
+    if (!data || typeof data !== 'object') {
+      return typeof data === 'string' ? data.slice(0, 200) : '';
+    }
+    const body = data as Record<string, unknown>;
+    const parts: string[] = [];
+    if (body.code != null) parts.push(`code=${String(body.code)}`);
+    if (body.error != null) parts.push(`error=${String(body.error)}`);
+    if (body.errorAr != null) parts.push(`errorAr=${String(body.errorAr)}`);
+    if (parts.length > 0) return parts.join(' ');
+    try {
+      const json = JSON.stringify(data);
+      return json.length > 300 ? `${json.slice(0, 300)}…` : json;
+    } catch {
+      return '';
+    }
+  }
+
+  private logUpstream(
+    method: string,
+    url: string,
+    status: number,
+    data: unknown,
+    durationMs: number,
+  ): void {
+    if (!this.upstreamDebugLog && status < 400) return;
+
+    const summary = this.summarizeUpstreamBody(data);
+    const level = status >= 400 ? 'warn' : 'debug';
+    const line =
+      `[upstream] ${method} ${url} → ${status} ${durationMs}ms` +
+      (summary ? ` | ${summary}` : '');
+
+    if (level === 'warn') {
+      this.logger.warn(line);
+    } else {
+      this.logger.debug(line);
+    }
+  }
+
   async proxy(options: EnsProxyOptions): Promise<EnsHttpResult> {
     const headers: Record<string, string> = {
       ...(options.req ? pickForwardHeaders(options.req) : {}),
@@ -75,9 +123,12 @@ export class EnsHttpService {
       headers['x-api-key'] = this.apiKeyService.generateHeaderValue();
     }
 
+    const url = this.buildUrl(options.path, options.query);
+    const started = Date.now();
+
     const config: AxiosRequestConfig = {
       method: options.method,
-      url: this.buildUrl(options.path, options.query),
+      url,
       headers,
       timeout: options.timeoutMs ?? this.defaultTimeoutMs,
       validateStatus: () => true,
@@ -127,19 +178,38 @@ export class EnsHttpService {
 
     try {
       const response = await firstValueFrom(this.httpService.request(config));
-      return {
+      const result = {
         status: response.status,
         data: response.data,
       };
+      this.logUpstream(
+        String(options.method),
+        url,
+        result.status,
+        result.data,
+        Date.now() - started,
+      );
+      return result;
     } catch (error) {
       if (error instanceof AxiosError) {
         if (error.response) {
-          return {
+          const result = {
             status: error.response.status,
             data: error.response.data,
           };
+          this.logUpstream(
+            String(options.method),
+            url,
+            result.status,
+            result.data,
+            Date.now() - started,
+          );
+          return result;
         }
         if (error.code === 'ECONNABORTED') {
+          this.logger.warn(
+            `[upstream] ${options.method} ${url} → timeout after ${Date.now() - started}ms`,
+          );
           return {
             status: 504,
             data: {
@@ -150,6 +220,10 @@ export class EnsHttpService {
           };
         }
       }
+
+      this.logger.error(
+        `[upstream] ${options.method} ${url} → unavailable (${error instanceof Error ? error.message : String(error)})`,
+      );
 
       throw new ServiceUnavailableException({
         error: 'Upstream service unavailable',

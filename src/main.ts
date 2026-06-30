@@ -15,13 +15,19 @@ function parseCorsOrigins(value: string): string[] | string | boolean {
 }
 
 async function bootstrap() {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
   const app = await NestFactory.create(AppModule, {
     bodyParser: true,
+    logger:
+      nodeEnv === 'production'
+        ? ['error', 'warn', 'log']
+        : ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') ?? 3001;
   const corsOrigins = configService.get<string>('corsOrigins') ?? '*';
+  const upstreamDebug = configService.get<boolean>('upstreamDebugLog');
 
   app.enableCors({
     origin: parseCorsOrigins(corsOrigins),
@@ -45,6 +51,9 @@ async function bootstrap() {
 
   await app.listen(port);
   Logger.log(`Ensmenu Mobile Gateway listening on port ${port}`, 'Bootstrap');
+  if (upstreamDebug) {
+    Logger.log('Upstream debug logging enabled (UPSTREAM_DEBUG_LOG)', 'Bootstrap');
+  }
 }
 
 bootstrap();
