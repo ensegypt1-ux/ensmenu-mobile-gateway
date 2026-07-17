@@ -10,11 +10,13 @@ import { EnsBackendModule } from './infrastructure/ens-backend/ens-backend.modul
 import { ActivityModule } from './modules/activity/activity.module';
 import { AdsModule } from './modules/ads/ads.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { DesignModule } from './modules/design/design.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportModule } from './modules/import/import.module';
 import { MediaModule } from './modules/media/media.module';
+import { MenuDeliveryModule } from './modules/menu-delivery/menu-delivery.module';
 import { MenusModule } from './modules/menus/menus.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { ImagesModule } from './modules/images/images.module';
@@ -39,6 +41,8 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     AuthModule,
     UserModule,
     MenusModule,
+    MenuDeliveryModule,
+    BranchesModule,
     CatalogModule,
     UploadModule,
     ImagesModule,

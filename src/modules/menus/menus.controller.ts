@@ -87,6 +87,38 @@ export class MenusController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @Get(':menuId/ratings')
+  async ratings(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: `menus/${menuId}/ratings`,
+      req,
+      query,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post(':menuId/copy')
+  async copy(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: `menus/${menuId}/copy`,
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
   @Get(':menuId')
   async getOne(
     @Req() req: Request,

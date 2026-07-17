@@ -1,10 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
-  Query,
+  Put,
   Req,
   Res,
   UseGuards,
@@ -15,85 +16,104 @@ import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 
-// TODO: remove owner/payment alias after Flutter migration (Phase 3)
-@Controller(['mobile/v1/payment', 'owner/payment'])
+@Controller([
+  'mobile/v1/menus/:menuId/delivery',
+  'owner/menus/:menuId/delivery',
+])
 @UseGuards(JwtAuthGuard)
-export class PaymentController {
+export class MenuDeliveryController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
   ) {}
 
-  @Post('subscription/pro-monthly/initiate')
-  async initiateProMonthly(
+  @Get('settings')
+  async getSettings(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
-  ) {
-    const result = await this.ensHttp.proxy({
-      method: 'POST',
-      path: 'payment/subscription/pro-monthly/initiate',
-      req,
-      body: body ?? {},
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Post('subscription/pro-yearly/initiate')
-  async initiateProYearly(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Body() body: unknown,
-  ) {
-    const result = await this.ensHttp.proxy({
-      method: 'POST',
-      path: 'payment/subscription/pro-yearly/initiate',
-      req,
-      body: body ?? {},
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  @Post('subscription/extra-menus/initiate')
-  async initiateExtraMenus(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Body() body: unknown,
-  ) {
-    const result = await this.ensHttp.proxy({
-      method: 'POST',
-      path: 'payment/subscription/extra-menus/initiate',
-      req,
-      body: body ?? {},
-    });
-    sendProxyResponse(res, result, this.assetUrlService);
-  }
-
-  /** EasyKash browser return — forward query string exactly (status, customerReference, …). */
-  @Get('redirect')
-  async handleRedirect(
-    @Req() req: Request,
-    @Res() res: Response,
-    @Query() query: Record<string, unknown>,
+    @Param('menuId') menuId: string,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'GET',
-      path: 'payment/redirect',
+      path: `menus/${menuId}/delivery/settings`,
       req,
-      query,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
-  @Get(':orderId/status')
-  async getPaymentStatus(
+  @Put('settings')
+  async updateSettings(
     @Req() req: Request,
     @Res() res: Response,
-    @Param('orderId') orderId: string,
+    @Param('menuId') menuId: string,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'PUT',
+      path: `menus/${menuId}/delivery/settings`,
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Get('governorates')
+  async getGovernorates(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'GET',
-      path: `payment/${orderId}/status`,
+      path: `menus/${menuId}/delivery/governorates`,
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post('governorates')
+  async createGovernorate(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: `menus/${menuId}/delivery/governorates`,
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Put('governorates/:governorateId')
+  async updateGovernorate(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Param('governorateId') governorateId: string,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'PUT',
+      path: `menus/${menuId}/delivery/governorates/${governorateId}`,
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Delete('governorates/:governorateId')
+  async deleteGovernorate(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Param('governorateId') governorateId: string,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'DELETE',
+      path: `menus/${menuId}/delivery/governorates/${governorateId}`,
       req,
     });
     sendProxyResponse(res, result, this.assetUrlService);

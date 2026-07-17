@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -69,6 +70,23 @@ export class ActivityController {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: `menus/${menuId}/activity-logs/${id}/actions`,
+      req,
+      body,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Patch(':id/items')
+  async patchItems(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('menuId') menuId: string,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'PATCH',
+      path: `menus/${menuId}/activity-logs/${id}/items`,
       req,
       body,
     });

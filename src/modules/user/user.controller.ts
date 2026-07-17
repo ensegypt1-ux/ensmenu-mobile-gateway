@@ -4,8 +4,10 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -176,6 +178,89 @@ export class UserController {
     const result = await this.ensHttp.proxy({
       method: 'DELETE',
       path: `user/delivery/governorates/${governorateId}`,
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Post('change-password')
+  async changePassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: 'user/change-password',
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Delete('account')
+  async deleteAccount(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'DELETE',
+      path: 'user/account',
+      req,
+      body: body ?? {},
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Get('notifications')
+  async getNotifications(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'GET',
+      path: 'user/notifications',
+      req,
+      query,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Patch('notifications/:id/read')
+  async markNotificationRead(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'PATCH',
+      path: `user/notifications/${id}/read`,
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Patch('notifications/read-all')
+  async markAllNotificationsRead(@Req() req: Request, @Res() res: Response) {
+    const result = await this.ensHttp.proxy({
+      method: 'POST',
+      path: 'user/notifications/read-all',
+      req,
+    });
+    sendProxyResponse(res, result, this.assetUrlService);
+  }
+
+  @Delete('notifications/:id')
+  async deleteNotification(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('id') id: string,
+  ) {
+    const result = await this.ensHttp.proxy({
+      method: 'DELETE',
+      path: `user/notifications/${id}`,
       req,
     });
     sendProxyResponse(res, result, this.assetUrlService);
