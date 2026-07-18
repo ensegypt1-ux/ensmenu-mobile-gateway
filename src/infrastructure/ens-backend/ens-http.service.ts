@@ -10,6 +10,7 @@ import { Request } from 'express';
 import { firstValueFrom } from 'rxjs';
 import { createFormData } from '../../common/utils/form-data.util';
 import { pickForwardHeaders } from '../../common/utils/forward-headers.util';
+import { normalizeUpstreamAuthError } from '../../common/utils/upstream-auth-error.util';
 import { ApiKeyService } from './api-key.service';
 
 export interface EnsHttpResult {
@@ -178,10 +179,13 @@ export class EnsHttpService {
 
     try {
       const response = await firstValueFrom(this.httpService.request(config));
-      const result = {
-        status: response.status,
-        data: response.data,
-      };
+      const result = normalizeUpstreamAuthError(
+        {
+          status: response.status,
+          data: response.data,
+        },
+        headers,
+      );
       this.logUpstream(
         String(options.method),
         url,
@@ -193,10 +197,13 @@ export class EnsHttpService {
     } catch (error) {
       if (error instanceof AxiosError) {
         if (error.response) {
-          const result = {
-            status: error.response.status,
-            data: error.response.data,
-          };
+          const result = normalizeUpstreamAuthError(
+            {
+              status: error.response.status,
+              data: error.response.data,
+            },
+            headers,
+          );
           this.logUpstream(
             String(options.method),
             url,
