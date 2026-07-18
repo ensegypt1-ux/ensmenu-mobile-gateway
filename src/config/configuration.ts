@@ -28,4 +28,16 @@ export default () => ({
   notificationDevicesStorePath:
     process.env.NOTIFICATION_DEVICES_STORE_PATH ??
     './data/notification-devices.json',
+  throttleTtlMs: parseInt(process.env.THROTTLE_TTL_MS ?? '60000', 10),
+  throttleLimit: parseInt(process.env.THROTTLE_LIMIT ?? '120', 10),
+  throttleAuthTtlMs: parseInt(process.env.THROTTLE_AUTH_TTL_MS ?? '60000', 10),
+  throttleAuthLimit: parseInt(process.env.THROTTLE_AUTH_LIMIT ?? '20', 10),
+  throttleSensitiveTtlMs: parseInt(
+    process.env.THROTTLE_SENSITIVE_TTL_MS ?? '60000',
+    10,
+  ),
+  throttleSensitiveLimit: parseInt(
+    process.env.THROTTLE_SENSITIVE_LIMIT ?? '40',
+    10,
+  ),
 });

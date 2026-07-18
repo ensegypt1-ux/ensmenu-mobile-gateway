@@ -16,6 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -35,6 +36,7 @@ export class UploadController {
     this.uploadMaxBytes = maxMb * 1024 * 1024;
   }
 
+  @SensitiveThrottle()
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {

@@ -14,6 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -29,6 +30,7 @@ export class ImportAliasController {
     private readonly importService: ImportService,
   ) {}
 
+  @SensitiveThrottle()
   @Post('import')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -73,6 +75,7 @@ export class ImportAliasController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @SensitiveThrottle()
   @Post('categories/bulk')
   async saveAlias(
     @Req() req: Request,
@@ -100,6 +103,7 @@ export class ImportCanonicalController {
     private readonly importService: ImportService,
   ) {}
 
+  @SensitiveThrottle()
   @Post('analyze')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -144,6 +148,7 @@ export class ImportCanonicalController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @SensitiveThrottle()
   @Post('save')
   async save(
     @Req() req: Request,

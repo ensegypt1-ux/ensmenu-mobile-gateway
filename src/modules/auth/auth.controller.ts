@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { AuthThrottle } from '../../common/decorators/throttle.decorators';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
@@ -25,6 +26,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @AuthThrottle()
   @Get('check-availability')
   async checkAvailability(
     @Req() req: Request,
@@ -41,6 +43,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('signup')
   async signup(
     @Req() req: Request,
@@ -57,6 +60,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('login')
   async login(
     @Req() req: Request,
@@ -74,6 +78,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('refresh')
   async refresh(
     @Req() req: Request,
@@ -90,6 +95,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('forgot-password')
   async forgotPassword(
     @Req() req: Request,
@@ -106,6 +112,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('reset-password')
   async resetPassword(
     @Req() req: Request,
@@ -122,6 +129,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('google')
   async google(
     @Req() req: Request,

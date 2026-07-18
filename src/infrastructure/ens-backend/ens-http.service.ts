@@ -10,6 +10,10 @@ import { Request } from 'express';
 import { firstValueFrom } from 'rxjs';
 import { createFormData } from '../../common/utils/form-data.util';
 import { pickForwardHeaders } from '../../common/utils/forward-headers.util';
+import {
+  assertUrlInsideApiBase,
+  sanitizeUpstreamPath,
+} from '../../common/utils/upstream-path.util';
 import { normalizeUpstreamAuthError } from '../../common/utils/upstream-auth-error.util';
 import { ApiKeyService } from './api-key.service';
 
@@ -57,8 +61,9 @@ export class EnsHttpService {
   }
 
   buildUrl(path: string, query?: Record<string, unknown>): string {
-    const normalizedPath = path.replace(/^\/+/, '');
-    const url = new URL(`${this.apiBaseUrl}/${normalizedPath}`);
+    const safePath = sanitizeUpstreamPath(path);
+    const url = new URL(`${this.apiBaseUrl}/${safePath}`);
+    assertUrlInsideApiBase(url.toString(), this.apiBaseUrl);
 
     if (query) {
       for (const [key, value] of Object.entries(query)) {
@@ -71,6 +76,7 @@ export class EnsHttpService {
       }
     }
 
+    assertUrlInsideApiBase(url.toString(), this.apiBaseUrl);
     return url.toString();
   }
 

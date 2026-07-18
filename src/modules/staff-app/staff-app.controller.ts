@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { AuthThrottle } from '../../common/decorators/throttle.decorators';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   sendProxyResponse,
@@ -37,6 +38,7 @@ export class StaffAppController {
   ) {}
 
   @Public()
+  @AuthThrottle()
   @Post('auth/login')
   async login(
     @Req() req: Request,

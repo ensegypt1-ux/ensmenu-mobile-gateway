@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { UpstreamExceptionFilter } from './common/filters/upstream-exception.filter';
@@ -36,6 +37,17 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
       load: [configuration],
       validate: validateEnv,
     }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          name: 'default',
+          ttl: config.get<number>('throttleTtlMs') ?? 60_000,
+          limit: config.get<number>('throttleLimit') ?? 120,
+        },
+      ],
+    }),
     EnsBackendModule,
     HealthModule,
     AuthModule,
@@ -63,6 +75,10 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
     {
       provide: APP_FILTER,

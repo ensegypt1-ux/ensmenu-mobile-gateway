@@ -90,6 +90,36 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   NOTIFICATION_DEVICES_STORE_PATH?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_AUTH_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_AUTH_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_SENSITIVE_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_SENSITIVE_LIMIT?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

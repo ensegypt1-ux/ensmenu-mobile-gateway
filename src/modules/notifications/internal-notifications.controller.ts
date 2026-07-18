@@ -1,11 +1,13 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
+import { SkipRateLimit } from '../../common/decorators/throttle.decorators';
 import { InternalSecretGuard } from '../../common/guards/internal-secret.guard';
 import { SendNotificationDto } from './dto/send-notification.dto';
 import { NotificationsService } from './services/notifications.service';
 
 @Controller('internal/notifications')
 @Public()
+@SkipRateLimit()
 @UseGuards(InternalSecretGuard)
 export class InternalNotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

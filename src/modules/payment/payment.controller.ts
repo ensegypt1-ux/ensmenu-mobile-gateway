@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -24,6 +25,7 @@ export class PaymentController {
     private readonly assetUrlService: AssetUrlService,
   ) {}
 
+  @SensitiveThrottle()
   @Post('subscription/pro-monthly/initiate')
   async initiateProMonthly(
     @Req() req: Request,
@@ -39,6 +41,7 @@ export class PaymentController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @SensitiveThrottle()
   @Post('subscription/pro-yearly/initiate')
   async initiateProYearly(
     @Req() req: Request,
@@ -54,6 +57,7 @@ export class PaymentController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @SensitiveThrottle()
   @Post('subscription/extra-menus/initiate')
   async initiateExtraMenus(
     @Req() req: Request,
