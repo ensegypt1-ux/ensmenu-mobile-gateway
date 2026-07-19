@@ -71,6 +71,36 @@ export class EnvironmentVariables {
   @IsString()
   PEXELS_API_KEY?: string;
 
+  /** Server-only Google Places / Geocoding web-service key (not Maps SDK). */
+  @IsOptional()
+  @IsString()
+  GOOGLE_MAPS_SERVER_API_KEY?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  MAPS_UPSTREAM_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_MAPS_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_MAPS_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_MAPS_OWNER_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_MAPS_OWNER_LIMIT?: number;
+
   @IsOptional()
   @IsUrl({ require_tld: false })
   N8N_MENU_IMPORT_WEBHOOK?: string;

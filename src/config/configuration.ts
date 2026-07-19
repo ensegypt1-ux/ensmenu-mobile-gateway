@@ -21,6 +21,22 @@ export default () => ({
   importTimeoutMs: parseInt(process.env.IMPORT_TIMEOUT_MS ?? '90000', 10),
   uploadMaxMb: parseInt(process.env.UPLOAD_MAX_MB ?? '10', 10),
   pexelsApiKey: process.env.PEXELS_API_KEY,
+  /** Server-only Places/Geocoding key — never expose to Flutter. */
+  googleMapsServerApiKey: process.env.GOOGLE_MAPS_SERVER_API_KEY,
+  mapsUpstreamTimeoutMs: parseInt(
+    process.env.MAPS_UPSTREAM_TIMEOUT_MS ?? '8000',
+    10,
+  ),
+  throttleMapsTtlMs: parseInt(process.env.THROTTLE_MAPS_TTL_MS ?? '60000', 10),
+  throttleMapsLimit: parseInt(process.env.THROTTLE_MAPS_LIMIT ?? '30', 10),
+  throttleMapsOwnerTtlMs: parseInt(
+    process.env.THROTTLE_MAPS_OWNER_TTL_MS ?? '60000',
+    10,
+  ),
+  throttleMapsOwnerLimit: parseInt(
+    process.env.THROTTLE_MAPS_OWNER_LIMIT ?? '30',
+    10,
+  ),
   n8nMenuImportWebhook: process.env.N8N_MENU_IMPORT_WEBHOOK,
   firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,

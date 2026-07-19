@@ -32,6 +32,18 @@ export function SensitiveThrottle() {
   );
 }
 
+/** Places autocomplete / details / geocode (owner maps proxy). */
+export function MapsThrottle() {
+  return applyDecorators(
+    Throttle({
+      default: {
+        limit: () => envInt('THROTTLE_MAPS_LIMIT', 30),
+        ttl: () => envInt('THROTTLE_MAPS_TTL_MS', 60_000),
+      },
+    }),
+  );
+}
+
 /** Health probes and similarly always-public checks — no rate limit. */
 export function SkipRateLimit() {
   return applyDecorators(SkipThrottle());

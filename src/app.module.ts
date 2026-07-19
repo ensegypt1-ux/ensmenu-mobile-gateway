@@ -21,6 +21,7 @@ import { MenuDeliveryModule } from './modules/menu-delivery/menu-delivery.module
 import { MenusModule } from './modules/menus/menus.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { ImagesModule } from './modules/images/images.module';
+import { MapsModule } from './modules/maps/maps.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { StaffModule } from './modules/staff/staff.module';
@@ -58,6 +59,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     CatalogModule,
     UploadModule,
     ImagesModule,
+    MapsModule,
     DesignModule,
     MediaModule,
     AdsModule,
