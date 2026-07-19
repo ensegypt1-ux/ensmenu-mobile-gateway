@@ -1,13 +1,19 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { Request } from 'express';
+import {
+  AUTH_IDENTITY_KEY,
+  VerifiedAuthIdentity,
+} from '../types/auth-identity';
 
+/** @deprecated Prefer VerifiedAuthIdentity from request.authIdentity */
 export interface JwtUserPayload {
   userId: number;
   role?: string;
-  /** Staff job role when `role` is `staff`: `waiter` | `cashier` */
   staffJobRole?: string;
+  menuId?: number;
+  staffRoleId?: number;
 }
 
 export function coerceUserId(raw: unknown): number | null {
@@ -19,87 +25,42 @@ export function coerceUserId(raw: unknown): number | null {
   return null;
 }
 
-function collectAccessTokenSecrets(configService: ConfigService): string[] {
-  const candidates = [
-    configService.get<string>('jwtAccessSecret'),
-    configService.get<string>('jwtSecret'),
-  ];
-
-  return [
-    ...new Set(
-      candidates
-        .filter((value): value is string => typeof value === 'string')
-        .map((value) => value.trim())
-        .filter((value) => value.length >= 32),
-    ),
-  ];
+function accessSecret(configService: ConfigService): string | null {
+  const secret = configService.get<string>('jwtAccessSecret')?.trim();
+  if (!secret || secret.length < 32) return null;
+  return secret;
 }
 
-function payloadToUser(payload: jwt.JwtPayload): JwtUserPayload | null {
+function payloadToIdentity(
+  payload: jwt.JwtPayload,
+): VerifiedAuthIdentity | null {
   const userId = coerceUserId(payload.id ?? payload.userId ?? payload.sub);
   if (userId == null) return null;
 
   const roleRaw = payload.role ?? payload.userRole;
-  const role = typeof roleRaw === 'string' ? roleRaw : undefined;
+  if (typeof roleRaw !== 'string' || !roleRaw.trim()) return null;
 
-  const staffJobRoleRaw = payload.staffJobRole;
-  const staffJobRole =
-    typeof staffJobRoleRaw === 'string' ? staffJobRoleRaw : undefined;
+  const menuId = coerceUserId(payload.menuId) ?? undefined;
+  const staffRoleId = coerceUserId(payload.staffRoleId) ?? undefined;
 
-  return { userId, role, staffJobRole };
+  return Object.freeze({
+    userId,
+    role: roleRaw.trim(),
+    ...(menuId != null && menuId > 0 ? { menuId } : {}),
+    ...(staffRoleId != null && staffRoleId > 0 ? { staffRoleId } : {}),
+  });
 }
 
-/** Verifies access token locally when gateway JWT secrets match the issuer. */
-export function verifyAccessTokenLocally(
-  req: Request,
+/**
+ * Cryptographically verifies an Owner/Staff access token using JWT_ACCESS_SECRET.
+ * Does not accept refresh tokens (different secret). Pins HS256.
+ */
+export function verifyAccessToken(
+  token: string,
   configService: ConfigService,
-): JwtUserPayload | null {
-  const authorization = req.headers.authorization;
-  if (
-    typeof authorization !== 'string' ||
-    !authorization.startsWith('Bearer ')
-  ) {
-    return null;
-  }
-
-  const token = authorization.slice('Bearer '.length).trim();
-  if (!token) return null;
-
-  for (const secret of collectAccessTokenSecrets(configService)) {
-    try {
-      const payload = jwt.verify(token, secret) as jwt.JwtPayload;
-      return payloadToUser(payload);
-    } catch {
-      // Try the next configured secret.
-    }
-  }
-
-  return null;
-}
-
-export function extractJwtUser(
-  req: Request,
-  configService: ConfigService,
-): JwtUserPayload {
-  const authorization = req.headers.authorization;
-  if (
-    typeof authorization !== 'string' ||
-    !authorization.startsWith('Bearer ')
-  ) {
-    throw new UnauthorizedException({
-      error: 'Authentication required',
-      errorAr: 'مطلوب تسجيل الدخول',
-      code: 'AUTH_REQUIRED',
-    });
-  }
-
-  const localUser = verifyAccessTokenLocally(req, configService);
-  if (localUser) return localUser;
-
-  const nodeEnv = configService.get<string>('nodeEnv') ?? 'development';
-  const hasAnySecret = collectAccessTokenSecrets(configService).length > 0;
-
-  if (!hasAnySecret && nodeEnv !== 'development') {
+): VerifiedAuthIdentity {
+  const secret = accessSecret(configService);
+  if (!secret) {
     throw new UnauthorizedException({
       error: 'Authentication service misconfigured',
       errorAr: 'خدمة المصادقة غير مهيأة',
@@ -107,9 +68,145 @@ export function extractJwtUser(
     });
   }
 
-  throw new UnauthorizedException({
-    error: 'Invalid or expired token',
-    errorAr: 'رمز الدخول غير صالح أو منتهي الصلاحية',
-    code: 'AUTH_INVALID_TOKEN',
+  try {
+    const payload = jwt.verify(token, secret, {
+      algorithms: ['HS256'],
+    }) as jwt.JwtPayload;
+
+    const identity = payloadToIdentity(payload);
+    if (!identity) {
+      throw new UnauthorizedException({
+        error: 'Invalid token payload',
+        errorAr: 'محتوى رمز الدخول غير صالح',
+        code: 'AUTH_INVALID_PAYLOAD',
+      });
+    }
+    return identity;
+  } catch (err) {
+    if (err instanceof UnauthorizedException) throw err;
+
+    const name =
+      err && typeof err === 'object' && 'name' in err
+        ? String((err as { name: string }).name)
+        : '';
+
+    if (name === 'TokenExpiredError') {
+      throw new UnauthorizedException({
+        error: 'Token expired',
+        errorAr: 'انتهت صلاحية الرمز',
+        code: 'TOKEN_EXPIRED',
+      });
+    }
+
+    throw new UnauthorizedException({
+      error: 'Invalid or expired token',
+      errorAr: 'رمز الدخول غير صالح أو منتهي الصلاحية',
+      code: 'AUTH_INVALID_TOKEN',
+    });
+  }
+}
+
+export function extractBearerToken(req: Request): string | null {
+  const authorization = req.headers.authorization;
+  if (
+    typeof authorization !== 'string' ||
+    !authorization.startsWith('Bearer ')
+  ) {
+    return null;
+  }
+  const token = authorization.slice('Bearer '.length).trim();
+  return token.length > 0 ? token : null;
+}
+
+/** Attach verified identity onto the request (immutable). */
+export function attachAuthIdentity(
+  req: Request,
+  identity: VerifiedAuthIdentity,
+): void {
+  Object.defineProperty(req, AUTH_IDENTITY_KEY, {
+    value: identity,
+    writable: false,
+    enumerable: true,
+    configurable: false,
   });
+  Object.defineProperty(req, 'user', {
+    value: identity,
+    writable: false,
+    enumerable: true,
+    configurable: false,
+  });
+}
+
+export function getAuthIdentity(req: Request): VerifiedAuthIdentity | null {
+  const fromKey = (req as Request & { authIdentity?: VerifiedAuthIdentity })
+    .authIdentity;
+  if (fromKey && typeof fromKey.userId === 'number') return fromKey;
+  const fromUser = (req as Request & { user?: VerifiedAuthIdentity }).user;
+  if (fromUser && typeof fromUser.userId === 'number') return fromUser;
+  return null;
+}
+
+export function requireAuthIdentity(req: Request): VerifiedAuthIdentity {
+  const identity = getAuthIdentity(req);
+  if (!identity) {
+    throw new UnauthorizedException({
+      error: 'Authentication required',
+      errorAr: 'مطلوب تسجيل الدخول',
+      code: 'AUTH_REQUIRED',
+    });
+  }
+  return identity;
+}
+
+/** @deprecated Use verifyAccessToken + getAuthIdentity */
+export function verifyAccessTokenLocally(
+  req: Request,
+  configService: ConfigService,
+): JwtUserPayload | null {
+  const token = extractBearerToken(req);
+  if (!token) return null;
+  try {
+    const identity = verifyAccessToken(token, configService);
+    return {
+      userId: identity.userId,
+      role: identity.role,
+      menuId: identity.menuId,
+      staffRoleId: identity.staffRoleId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** @deprecated Prefer requireAuthIdentity after JwtAuthGuard */
+export function extractJwtUser(
+  req: Request,
+  configService: ConfigService,
+): JwtUserPayload {
+  const existing = getAuthIdentity(req);
+  if (existing) {
+    return {
+      userId: existing.userId,
+      role: existing.role,
+      menuId: existing.menuId,
+      staffRoleId: existing.staffRoleId,
+    };
+  }
+
+  const token = extractBearerToken(req);
+  if (!token) {
+    throw new UnauthorizedException({
+      error: 'Authentication required',
+      errorAr: 'مطلوب تسجيل الدخول',
+      code: 'AUTH_REQUIRED',
+    });
+  }
+
+  const identity = verifyAccessToken(token, configService);
+  return {
+    userId: identity.userId,
+    role: identity.role,
+    menuId: identity.menuId,
+    staffRoleId: identity.staffRoleId,
+  };
 }

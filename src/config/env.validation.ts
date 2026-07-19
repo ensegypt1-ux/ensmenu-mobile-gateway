@@ -34,10 +34,6 @@ export class EnvironmentVariables {
   @IsString()
   JWT_ACCESS_SECRET?: string;
 
-  @IsOptional()
-  @IsString()
-  JWT_SECRET?: string;
-
   @IsString()
   @IsNotEmpty()
   SECRET_KEY: string;
@@ -66,6 +62,25 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   UPLOAD_MAX_MB?: number;
+
+  @IsOptional()
+  @IsString()
+  REQUEST_JSON_LIMIT?: string;
+
+  @IsOptional()
+  @IsString()
+  REQUEST_URLENCODED_LIMIT?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1024)
+  UPSTREAM_MAX_CONTENT_LENGTH_BYTES?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  TRUST_PROXY_HOPS?: number;
 
   @IsOptional()
   @IsString()
@@ -180,6 +195,26 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   THROTTLE_APP_VERSION_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_HEALTH_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_HEALTH_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_INTERNAL_NOTIFICATIONS_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_INTERNAL_NOTIFICATIONS_LIMIT?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
@@ -193,6 +228,37 @@ export function validateEnv(config: Record<string, unknown>) {
       `Environment validation failed:\n${errors
         .map((e) => Object.values(e.constraints ?? {}).join(', '))
         .join('\n')}`,
+    );
+  }
+
+  const nodeEnv = validated.NODE_ENV;
+  const productionIssues: string[] = [];
+
+  if (nodeEnv === 'production') {
+    const jwt = validated.JWT_ACCESS_SECRET?.trim() ?? '';
+    if (jwt.length < 32) {
+      productionIssues.push(
+        'JWT_ACCESS_SECRET is required in production (min 32 characters)',
+      );
+    }
+
+    if ((validated.CORS_ORIGINS ?? '').trim() === '*') {
+      productionIssues.push(
+        'CORS_ORIGINS=* is forbidden in production; set an explicit allowlist',
+      );
+    }
+
+    const internal = validated.INTERNAL_NOTIFICATIONS_SECRET?.trim() ?? '';
+    if (internal.length < 32) {
+      productionIssues.push(
+        'INTERNAL_NOTIFICATIONS_SECRET is required in production (min 32 characters)',
+      );
+    }
+  }
+
+  if (productionIssues.length > 0) {
+    throw new Error(
+      `Environment validation failed:\n${productionIssues.join('\n')}`,
     );
   }
 

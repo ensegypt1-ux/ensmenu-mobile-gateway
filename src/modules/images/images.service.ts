@@ -62,12 +62,10 @@ export class ImagesService {
     });
 
     if (!response.ok) {
-      const detail = (await response.text()).slice(0, 300);
       throw new ServiceUnavailableException({
         error: 'pexels_search_failed',
         errorAr: 'فشل البحث عن الصور',
         code: 'PEXELS_SEARCH_FAILED',
-        detail,
       });
     }
 

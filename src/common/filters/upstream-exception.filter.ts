@@ -25,7 +25,7 @@ export class UpstreamExceptionFilter implements ExceptionFilter {
     }
 
     this.logger.error(
-      `Unhandled gateway error on ${request.method} ${request.originalUrl}: ${
+      `Unhandled gateway error on ${request.method} ${request.path}: ${
         exception instanceof Error ? exception.message : String(exception)
       }`,
     );
@@ -34,8 +34,18 @@ export class UpstreamExceptionFilter implements ExceptionFilter {
       error: 'Internal gateway error',
       errorAr: 'خطأ داخلي في البوابة',
       code: 'GATEWAY_ERROR',
-      requestId: request.headers['x-request-id'],
+      requestId: this.safeRequestId(request),
     });
+  }
+
+  private safeRequestId(request: Request): string | undefined {
+    const raw = request.headers['x-request-id'];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > 64) return undefined;
+    if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return undefined;
+    return trimmed;
   }
 
   private normalize(
@@ -43,7 +53,7 @@ export class UpstreamExceptionFilter implements ExceptionFilter {
     statusCode: number,
     request: Request,
   ): Record<string, unknown> {
-    const requestId = request.headers['x-request-id'];
+    const requestId = this.safeRequestId(request);
 
     if (typeof payload === 'string') {
       return {
@@ -54,13 +64,19 @@ export class UpstreamExceptionFilter implements ExceptionFilter {
     }
 
     const record = payload as Record<string, unknown>;
-    return {
+    // Whitelist client-visible fields — never spread raw exception payloads
+    // (prevents leaking `detail`, stacks, webhook snippets, etc.).
+    const out: Record<string, unknown> = {
       statusCode: record.statusCode ?? statusCode,
       error: record.error ?? record.message,
       errorAr: record.errorAr,
       code: record.code,
       requestId,
-      ...record,
     };
+
+    if (record.isLocked != null) out.isLocked = record.isLocked;
+    if (record.lockedUntil != null) out.lockedUntil = record.lockedUntil;
+
+    return out;
   }
 }

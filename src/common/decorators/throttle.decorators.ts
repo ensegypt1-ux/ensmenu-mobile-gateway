@@ -56,7 +56,31 @@ export function AppVersionThrottle() {
   );
 }
 
-/** Health probes and similarly always-public checks — no rate limit. */
+/** Health probes — light IP throttle (still public). */
+export function HealthThrottle() {
+  return applyDecorators(
+    Throttle({
+      default: {
+        limit: () => envInt('THROTTLE_HEALTH_LIMIT', 60),
+        ttl: () => envInt('THROTTLE_HEALTH_TTL_MS', 60_000),
+      },
+    }),
+  );
+}
+
+/** Internal notifications (shared secret) — dedicated throttle. */
+export function InternalNotificationsThrottle() {
+  return applyDecorators(
+    Throttle({
+      default: {
+        limit: () => envInt('THROTTLE_INTERNAL_NOTIFICATIONS_LIMIT', 60),
+        ttl: () => envInt('THROTTLE_INTERNAL_NOTIFICATIONS_TTL_MS', 60_000),
+      },
+    }),
+  );
+}
+
+/** Opt-out of rate limiting (avoid for production-facing endpoints). */
 export function SkipRateLimit() {
   return applyDecorators(SkipThrottle());
 }

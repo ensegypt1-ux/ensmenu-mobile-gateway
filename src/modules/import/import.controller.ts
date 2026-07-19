@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -14,11 +15,39 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
-import { ImportService } from './import.service';
+import { IMPORT_ACCEPTED_MIME_TYPES, ImportService } from './import.service';
+
+const IMPORT_FILE_SIZE = 10 * 1024 * 1024;
+
+function importFileInterceptor() {
+  return FileInterceptor('file', {
+    storage: memoryStorage(),
+    limits: { fileSize: IMPORT_FILE_SIZE, files: 1 },
+    fileFilter: (_req, file, cb) => {
+      const mime = (file.mimetype || '').toLowerCase();
+      const ext = file.originalname.split('.').pop()?.toLowerCase() ?? '';
+      const allowedExt =
+        ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp';
+      if (IMPORT_ACCEPTED_MIME_TYPES.has(mime) || allowedExt) {
+        cb(null, true);
+        return;
+      }
+      cb(
+        new BadRequestException({
+          error: 'invalid_file_type',
+          errorAr: 'نوع الملف غير مدعوم. استخدم JPG أو PNG أو WebP',
+          code: 'IMPORT_INVALID_FILE_TYPE',
+        }),
+        false,
+      );
+    },
+  });
+}
 
 /** Flutter Phase 1 alias paths — exact match required. */
 @Controller('owner/menus/:menuId')
@@ -31,13 +60,9 @@ export class ImportAliasController {
   ) {}
 
   @SensitiveThrottle()
+  @UseGuards(OwnerOnlyGuard)
   @Post('import')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(importFileInterceptor())
   async analyzeAlias(
     @Req() req: Request,
     @Res() res: Response,
@@ -104,13 +129,9 @@ export class ImportCanonicalController {
   ) {}
 
   @SensitiveThrottle()
+  @UseGuards(OwnerOnlyGuard)
   @Post('analyze')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(importFileInterceptor())
   async analyze(
     @Req() req: Request,
     @Res() res: Response,

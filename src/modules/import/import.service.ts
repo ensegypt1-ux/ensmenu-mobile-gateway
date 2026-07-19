@@ -11,20 +11,21 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { createFormData } from '../../common/utils/form-data.util';
+import { assertSafePathSegment } from '../../common/utils/upstream-path.util';
 import { extractJsonFromN8n, isN8nImportFailure } from './n8n-response.util';
 
-const ACCEPTED_MIME_TYPES = new Set([
+export const IMPORT_ACCEPTED_MIME_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/jpg',
   'image/webp',
 ]);
 
-const DEFAULT_WEBHOOK = 'https://ensbot.net/webhook/menu-import';
-
 function inferMimeType(filename: string, mimetype: string): string {
   const lower = (mimetype || '').toLowerCase();
-  if (ACCEPTED_MIME_TYPES.has(lower)) return lower;
+  if (IMPORT_ACCEPTED_MIME_TYPES.has(lower)) {
+    return lower === 'image/jpg' ? 'image/jpeg' : lower;
+  }
 
   const ext = filename.split('.').pop()?.toLowerCase();
   switch (ext) {
@@ -50,10 +51,25 @@ export class ImportService {
   ) {}
 
   private resolveWebhookUrl(): string {
-    return (
-      this.configService.get<string>('n8nMenuImportWebhook')?.trim() ||
-      DEFAULT_WEBHOOK
-    );
+    const webhook = this.configService
+      .get<string>('n8nMenuImportWebhook')
+      ?.trim();
+    if (!webhook) {
+      throw new ServiceUnavailableException({
+        error: 'AI import service is not configured',
+        errorAr: 'خدمة استيراد المنيو غير مفعّلة',
+        code: 'IMPORT_NOT_CONFIGURED',
+      });
+    }
+    return webhook;
+  }
+
+  private upstreamMaxBytes(): number {
+    const mb = this.configService.get<number>('uploadMaxMb') ?? 10;
+    const configured =
+      this.configService.get<number>('upstreamMaxContentLengthBytes') ??
+      mb * 1024 * 1024;
+    return Math.max(1024 * 1024, configured);
   }
 
   async analyzeMenuImage(params: {
@@ -62,18 +78,15 @@ export class ImportService {
     file: Express.Multer.File;
   }): Promise<{ raw: unknown }> {
     const webhookUrl = this.resolveWebhookUrl();
-    if (!webhookUrl) {
-      throw new ServiceUnavailableException({
-        error: 'AI import service is not configured',
-        errorAr: 'خدمة استيراد المنيو غير مفعّلة',
-        code: 'IMPORT_NOT_CONFIGURED',
-      });
-    }
+
+    const menuId = assertSafePathSegment(params.menuId, 'menuId');
+    const localeRaw = (params.locale ?? 'ar').trim().toLowerCase();
+    const locale = localeRaw === 'en' ? 'en' : 'ar';
 
     const filename = params.file.originalname || 'menu-image.jpg';
     const mime = inferMimeType(filename, params.file.mimetype || '');
 
-    if (!ACCEPTED_MIME_TYPES.has(mime)) {
+    if (!IMPORT_ACCEPTED_MIME_TYPES.has(mime)) {
       throw new BadRequestException({
         error: 'invalid_file_type',
         errorAr: 'نوع الملف غير مدعوم. استخدم JPG أو PNG أو WebP',
@@ -81,20 +94,35 @@ export class ImportService {
       });
     }
 
-    const locale = params.locale?.trim() || 'ar';
-    const menuId = params.menuId.trim();
+    const normalizedMime = mime === 'image/jpg' ? 'image/jpeg' : mime;
+
+    const maxBytes = this.upstreamMaxBytes();
+    if (!params.file.buffer || params.file.buffer.length === 0) {
+      throw new BadRequestException({
+        error: 'File is required',
+        errorAr: 'الملف مطلوب',
+        code: 'IMPORT_FILE_REQUIRED',
+      });
+    }
+    if (params.file.buffer.length > maxBytes) {
+      throw new BadRequestException({
+        error: 'file_too_large',
+        errorAr: 'حجم الملف كبير جداً',
+        code: 'IMPORT_FILE_TOO_LARGE',
+      });
+    }
 
     // Match ens-menu-main /api/menu-import upstream form fields.
     const form = createFormData();
     form.append('file', params.file.buffer, {
       filename,
-      contentType: mime,
+      contentType: normalizedMime,
     });
     form.append('menuId', menuId);
     form.append('locale', locale);
     form.append('image', params.file.buffer, {
       filename,
-      contentType: mime,
+      contentType: normalizedMime,
     });
 
     const timeoutMs =
@@ -105,11 +133,12 @@ export class ImportService {
         this.httpService.post<string>(webhookUrl, form, {
           headers: form.getHeaders(),
           timeout: timeoutMs,
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
+          maxBodyLength: maxBytes,
+          maxContentLength: maxBytes,
           validateStatus: () => true,
           responseType: 'text',
           transformResponse: [(data) => data],
+          maxRedirects: 0,
         }),
       );
 
@@ -120,7 +149,7 @@ export class ImportService {
 
       if (response.status < 200 || response.status >= 300) {
         this.logger.warn(
-          `N8N webhook failed (${response.status}) for menu ${menuId}: ${rawText.slice(0, 300)}`,
+          `N8N webhook failed (${response.status}) for menu ${menuId}`,
         );
 
         const inactive =
@@ -134,11 +163,9 @@ export class ImportService {
             ? 'webhook n8n غير نشط — فعّل الـ workflow في n8n'
             : 'فشل تحليل الصورة عبر خدمة الذكاء الاصطناعي',
           code: inactive ? 'IMPORT_WEBHOOK_INACTIVE' : 'IMPORT_WEBHOOK_FAILED',
-          detail: rawText.slice(0, 500),
         });
       }
 
-      // n8n Code node may return JSON object directly (not string).
       let parsedBody: unknown;
       if (typeof response.data === 'object' && response.data !== null) {
         parsedBody = response.data;
@@ -148,17 +175,15 @@ export class ImportService {
 
       if (isN8nImportFailure(parsedBody)) {
         this.logger.warn(
-          `Import INVALID_JSON menu=${menuId} error=${parsedBody.error} ` +
-            `rawPreview=${String(parsedBody.raw ?? '').slice(0, 200)}`,
+          `Import INVALID_JSON menu=${menuId} error=${(parsedBody as { error?: string }).error}`,
         );
         throw new UnprocessableEntityException({
           error: 'invalid_response',
           errorAr:
-            parsedBody.error === 'INVALID_JSON'
+            (parsedBody as { error?: string }).error === 'INVALID_JSON'
               ? 'لم نستطع استخراج أصناف من الصورة'
               : 'فشل تحليل استجابة الذكاء الاصطناعي',
           code: 'IMPORT_INVALID_RESPONSE',
-          detail: String(parsedBody.raw ?? rawText).slice(0, 500),
         });
       }
 
@@ -172,14 +197,12 @@ export class ImportService {
 
       if (extracted === null) {
         this.logger.warn(
-          `Import parse failed menu=${menuId} responseLen=${rawText.length} ` +
-            `preview=${rawText.slice(0, 200)}`,
+          `Import parse failed menu=${menuId} responseLen=${rawText.length}`,
         );
         throw new UnprocessableEntityException({
           error: 'invalid_response',
           errorAr: 'لم نستطع استخراج أصناف من الصورة',
           code: 'IMPORT_INVALID_RESPONSE',
-          detail: rawText.slice(0, 500),
         });
       }
 
@@ -188,13 +211,13 @@ export class ImportService {
         `Import analyze OK menu=${menuId} categories=${stats.categories} items=${stats.items}`,
       );
 
-      // Frontend MenuImportApiResponse shape.
       return { raw: extracted };
     } catch (error) {
       if (
         error instanceof BadGatewayException ||
         error instanceof UnprocessableEntityException ||
-        error instanceof BadRequestException
+        error instanceof BadRequestException ||
+        error instanceof ServiceUnavailableException
       ) {
         throw error;
       }
@@ -208,12 +231,11 @@ export class ImportService {
         });
       }
 
-      this.logger.error('Import analyze failed', error as Error);
+      this.logger.error('Import analyze failed');
       throw new BadGatewayException({
         error: 'import_analyze_failed',
         errorAr: 'فشل تحليل الصورة',
         code: 'IMPORT_ANALYZE_FAILED',
-        detail: error instanceof Error ? error.message : String(error),
       });
     }
   }

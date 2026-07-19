@@ -46,6 +46,7 @@ export class EnsHttpService {
   private readonly apiBaseUrl: string;
   private readonly defaultTimeoutMs: number;
   private readonly upstreamDebugLog: boolean;
+  private readonly maxContentLengthBytes: number;
 
   constructor(
     private readonly httpService: HttpService,
@@ -58,6 +59,9 @@ export class EnsHttpService {
       this.configService.get<number>('upstreamTimeoutMs') ?? 30000;
     this.upstreamDebugLog =
       this.configService.get<boolean>('upstreamDebugLog') ?? false;
+    this.maxContentLengthBytes =
+      this.configService.get<number>('upstreamMaxContentLengthBytes') ??
+      15 * 1024 * 1024;
   }
 
   buildUrl(path: string, query?: Record<string, unknown>): string {
@@ -109,8 +113,17 @@ export class EnsHttpService {
 
     const summary = this.summarizeUpstreamBody(data);
     const level = status >= 400 ? 'warn' : 'debug';
+    // Log method + status only — never full upstream bodies or credentials.
+    const safeHostPath = (() => {
+      try {
+        const u = new URL(url);
+        return `${u.origin}${u.pathname}`;
+      } catch {
+        return '[upstream]';
+      }
+    })();
     const line =
-      `[upstream] ${method} ${url} → ${status} ${durationMs}ms` +
+      `[upstream] ${method} ${safeHostPath} → ${status} ${durationMs}ms` +
       (summary ? ` | ${summary}` : '');
 
     if (level === 'warn') {
@@ -139,6 +152,9 @@ export class EnsHttpService {
       headers,
       timeout: options.timeoutMs ?? this.defaultTimeoutMs,
       validateStatus: () => true,
+      maxRedirects: 0,
+      maxBodyLength: this.maxContentLengthBytes,
+      maxContentLength: this.maxContentLengthBytes,
     };
 
     if (options.multipart) {
@@ -171,8 +187,6 @@ export class EnsHttpService {
         ...headers,
         ...form.getHeaders(),
       };
-      config.maxBodyLength = Infinity;
-      config.maxContentLength = Infinity;
     } else if (options.body !== undefined && options.method !== 'GET') {
       config.data = options.body;
       if (!config.headers?.['content-type']) {

@@ -4,8 +4,8 @@ export default () => ({
   ensBackendUrl: process.env.ENS_BACKEND_URL?.replace(/\/$/, ''),
   assetPublicBaseUrl: process.env.ASSET_PUBLIC_BASE_URL?.replace(/\/$/, ''),
   corsOrigins: process.env.CORS_ORIGINS ?? '*',
-  jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? process.env.JWT_SECRET,
-  jwtSecret: process.env.JWT_SECRET,
+  /** Access-token secret only — never use refresh secret for verification. */
+  jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
   secretKey: process.env.SECRET_KEY ?? process.env.ENCRYPTION_KEY,
   /** Compensates clock skew vs ENS_BACKEND_URL (backend rejects x-api-key after ~60s). */
   apiKeyTimeOffsetSeconds: parseInt(
@@ -20,6 +20,19 @@ export default () => ({
   upstreamTimeoutMs: parseInt(process.env.UPSTREAM_TIMEOUT_MS ?? '30000', 10),
   importTimeoutMs: parseInt(process.env.IMPORT_TIMEOUT_MS ?? '90000', 10),
   uploadMaxMb: parseInt(process.env.UPLOAD_MAX_MB ?? '10', 10),
+  requestJsonLimit: process.env.REQUEST_JSON_LIMIT ?? '1mb',
+  requestUrlencodedLimit: process.env.REQUEST_URLENCODED_LIMIT ?? '1mb',
+  upstreamMaxContentLengthBytes: parseInt(
+    process.env.UPSTREAM_MAX_CONTENT_LENGTH_BYTES ??
+      String(15 * 1024 * 1024),
+    10,
+  ),
+  /** Number of reverse-proxy hops trusted for client IP (0 = trust none). */
+  trustProxyHops: parseInt(
+    process.env.TRUST_PROXY_HOPS ??
+      ((process.env.NODE_ENV ?? 'development') === 'production' ? '1' : '0'),
+    10,
+  ),
   pexelsApiKey: process.env.PEXELS_API_KEY,
   /** Server-only Places/Geocoding key — never expose to Flutter. */
   googleMapsServerApiKey: process.env.GOOGLE_MAPS_SERVER_API_KEY,

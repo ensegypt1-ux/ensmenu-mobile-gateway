@@ -10,7 +10,6 @@ import { normalizeStaffUpstreamError } from './staff-order-errors.util';
 import {
   StaffJobRole,
   normalizeStaffJobRole,
-  staffJobRoleFromRequest,
 } from './staff-job-role.util';
 import {
   StaffOrderChannel,
@@ -36,16 +35,20 @@ export class StaffOrdersFlowService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
+  /**
+   * Job role from verified upstream `/staff-auth/me` only.
+   * Never inferred from unsigned JWT claims.
+   */
   async resolveRole(req: Request): Promise<StaffJobRole> {
-    const fromJwt = staffJobRoleFromRequest(req);
-    if (fromJwt === 'cashier') return 'cashier';
-
     try {
       const me = await this.ensHttp.proxy({
         method: 'GET',
         path: 'staff-auth/me',
         req,
       });
+      if (me.status !== 200) {
+        return 'waiter';
+      }
       const staff = (me.data as Record<string, unknown> | null)?.staff;
       if (staff && typeof staff === 'object') {
         const role = normalizeStaffJobRole(
@@ -57,7 +60,7 @@ export class StaffOrdersFlowService {
       /* fall through */
     }
 
-    return fromJwt === 'unknown' ? 'waiter' : fromJwt;
+    return 'waiter';
   }
 
   async listOrders(

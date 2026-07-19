@@ -1,18 +1,18 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { MapsThrottle } from '../../common/decorators/throttle.decorators';
 import { assertOwnerMapsAccess } from './maps-auth.util';
 import { MapsOwnerRateLimiter } from './maps-owner-rate-limiter';
 import { MapsService } from './maps.service';
 
 /**
- * Owner Maps proxy — JwtAuthGuard presence + claim-based Owner checks.
- * Does not use request.user / request.user.decoded (guards never set those).
- * Does not call OwnerAuthUserService (avoids local JWT secret mismatch).
+ * Owner Maps proxy — requires verified Owner JWT (JwtAuthGuard + OwnerOnlyGuard).
+ * Per-owner rate limit uses verified userId only (not client-supplied identity).
  */
 @Controller(['mobile/v1/maps', 'owner/maps'])
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OwnerOnlyGuard)
 export class MapsController {
   constructor(
     private readonly mapsService: MapsService,

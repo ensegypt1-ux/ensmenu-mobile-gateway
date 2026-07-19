@@ -1,22 +1,20 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { OwnerAuthUserService } from '../../infrastructure/ens-backend/owner-auth-user.service';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { requireAuthIdentity } from '../../common/utils/jwt-payload.util';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { UnregisterDeviceDto } from './dto/unregister-device.dto';
 import { NotificationsService } from './services/notifications.service';
 
 @Controller(['mobile/v1/notifications/devices', 'owner/notifications/devices'])
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OwnerOnlyGuard)
 export class NotificationsController {
-  constructor(
-    private readonly notificationsService: NotificationsService,
-    private readonly ownerAuthUser: OwnerAuthUserService,
-  ) {}
+  constructor(private readonly notificationsService: NotificationsService) {}
 
   @Post('register')
   async register(@Req() req: Request, @Body() body: RegisterDeviceDto) {
-    const user = await this.ownerAuthUser.resolveFromRequest(req);
+    const user = requireAuthIdentity(req);
     const device = await this.notificationsService.registerDevice({
       userId: user.userId,
       role: user.role,
@@ -38,7 +36,7 @@ export class NotificationsController {
 
   @Post('unregister')
   async unregister(@Req() req: Request, @Body() body: UnregisterDeviceDto) {
-    const user = await this.ownerAuthUser.resolveFromRequest(req);
+    const user = requireAuthIdentity(req);
     const deactivated = await this.notificationsService.unregisterDevice({
       userId: user.userId,
       deviceId: body.deviceId.trim(),
