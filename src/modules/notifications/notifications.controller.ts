@@ -1,6 +1,5 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { requireAuthIdentity } from '../../common/utils/jwt-payload.util';
 import { RegisterDeviceDto } from './dto/register-device.dto';
@@ -8,7 +7,7 @@ import { UnregisterDeviceDto } from './dto/unregister-device.dto';
 import { NotificationsService } from './services/notifications.service';
 
 @Controller(['mobile/v1/notifications/devices', 'owner/notifications/devices'])
-@UseGuards(JwtAuthGuard, OwnerOnlyGuard)
+@UseGuards(OwnerOnlyGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 

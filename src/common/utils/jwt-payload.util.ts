@@ -122,23 +122,34 @@ export function extractBearerToken(req: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
-/** Attach verified identity onto the request (immutable). */
+/**
+ * Attach verified identity onto the request (immutable).
+ * Idempotent: safe if JwtAuthGuard runs more than once on the same request
+ * (e.g. APP_GUARD + controller @UseGuards).
+ */
 export function attachAuthIdentity(
   req: Request,
   identity: VerifiedAuthIdentity,
 ): void {
-  Object.defineProperty(req, AUTH_IDENTITY_KEY, {
-    value: identity,
-    writable: false,
-    enumerable: true,
-    configurable: false,
-  });
-  Object.defineProperty(req, 'user', {
-    value: identity,
-    writable: false,
-    enumerable: true,
-    configurable: false,
-  });
+  const existingAuth = Object.getOwnPropertyDescriptor(req, AUTH_IDENTITY_KEY);
+  if (!existingAuth) {
+    Object.defineProperty(req, AUTH_IDENTITY_KEY, {
+      value: identity,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+  }
+
+  const existingUser = Object.getOwnPropertyDescriptor(req, 'user');
+  if (!existingUser) {
+    Object.defineProperty(req, 'user', {
+      value: identity,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+  }
 }
 
 export function getAuthIdentity(req: Request): VerifiedAuthIdentity | null {

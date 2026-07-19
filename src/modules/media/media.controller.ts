@@ -6,10 +6,8 @@ import {
   Put,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -27,7 +25,6 @@ const MEDIA_FIELDS = [
 
 /** Canonical-only convenience routes; Flutter Phase 1 uses PUT /owner/menus/:id directly. */
 @Controller('mobile/v1/menus/:menuId/media')
-@UseGuards(JwtAuthGuard)
 export class MediaController {
   constructor(
     private readonly ensHttp: EnsHttpService,

@@ -166,4 +166,19 @@ describe('jwt-payload.util', () => {
     expect(extractBearerToken(req)).toBe(token);
     expect(getAuthIdentity(req)?.userId).toBe(5);
   });
+
+  it('is safe to attach authIdentity more than once', () => {
+    const token = jwt.sign(
+      { id: 7, userId: 7, role: 'user' },
+      secret,
+      { algorithm: 'HS256', expiresIn: '15m' },
+    );
+    const identity = verifyAccessToken(token, configService);
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+    } as import('express').Request;
+    attachAuthIdentity(req, identity);
+    expect(() => attachAuthIdentity(req, identity)).not.toThrow();
+    expect(getAuthIdentity(req)?.userId).toBe(7);
+  });
 });

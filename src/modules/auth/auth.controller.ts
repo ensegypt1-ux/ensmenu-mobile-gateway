@@ -6,19 +6,16 @@ import {
   Query,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthThrottle } from '../../common/decorators/throttle.decorators';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
 
 // TODO: remove owner/auth alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/auth', 'owner/auth'])
-@UseGuards(JwtAuthGuard)
 export class AuthController {
   constructor(
     private readonly ensHttp: EnsHttpService,

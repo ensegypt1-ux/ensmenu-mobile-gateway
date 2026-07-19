@@ -13,7 +13,6 @@ import {
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthThrottle } from '../../common/decorators/throttle.decorators';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StaffOnlyGuard } from '../../common/guards/role.guards';
 import {
   sendProxyResponse,
@@ -30,7 +29,7 @@ import { StaffOrdersFlowService } from './staff-orders-flow.service';
  * Ensmenu Staff mobile app — auth and order operations via Express upstream.
  */
 @Controller('mobile/v1/staff')
-@UseGuards(JwtAuthGuard, StaffOnlyGuard)
+@UseGuards(StaffOnlyGuard)
 export class StaffAppController {
   constructor(
     private readonly ensHttp: EnsHttpService,

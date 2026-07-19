@@ -14,7 +14,6 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
@@ -51,7 +50,6 @@ function importFileInterceptor() {
 
 /** Flutter Phase 1 alias paths — exact match required. */
 @Controller('owner/menus/:menuId')
-@UseGuards(JwtAuthGuard)
 export class ImportAliasController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -120,7 +118,6 @@ export class ImportAliasController {
 
 /** Canonical import routes under /mobile/v1/menus/:menuId/import/* */
 @Controller('mobile/v1/menus/:menuId/import')
-@UseGuards(JwtAuthGuard)
 export class ImportCanonicalController {
   constructor(
     private readonly ensHttp: EnsHttpService,

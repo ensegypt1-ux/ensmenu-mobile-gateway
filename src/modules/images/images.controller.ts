@@ -5,7 +5,6 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { ImagesService } from './images.service';
@@ -16,7 +15,7 @@ const MAX_PER_PAGE = 30;
 
 // TODO: remove owner/images alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/images', 'owner/images'])
-@UseGuards(JwtAuthGuard, OwnerOnlyGuard)
+@UseGuards(OwnerOnlyGuard)
 export class ImagesController {
   constructor(private readonly imagesService: ImagesService) {}
 

@@ -8,10 +8,8 @@ import {
   Query,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -21,7 +19,6 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
   'mobile/v1/menus/:menuId/activity-logs',
   'owner/menus/:menuId/activity-logs',
 ])
-@UseGuards(JwtAuthGuard)
 export class ActivityController {
   constructor(
     private readonly ensHttp: EnsHttpService,
