@@ -150,6 +150,36 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   THROTTLE_SENSITIVE_LIMIT?: number;
+
+  @IsOptional()
+  @IsString()
+  APP_ANDROID_LATEST_VERSION?: string;
+
+  @IsOptional()
+  @IsString()
+  APP_ANDROID_MINIMUM_VERSION?: string;
+
+  @IsOptional()
+  @IsString()
+  APP_ANDROID_FORCE_UPDATE?: string;
+
+  @IsOptional()
+  @IsString()
+  APP_ANDROID_STORE_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  APP_ANDROID_RELEASE_NOTES?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  THROTTLE_APP_VERSION_TTL_MS?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_APP_VERSION_LIMIT?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

@@ -44,6 +44,18 @@ export function MapsThrottle() {
   );
 }
 
+/** Public app-version polling — light IP limit (stricter than global default). */
+export function AppVersionThrottle() {
+  return applyDecorators(
+    Throttle({
+      default: {
+        limit: () => envInt('THROTTLE_APP_VERSION_LIMIT', 30),
+        ttl: () => envInt('THROTTLE_APP_VERSION_TTL_MS', 60_000),
+      },
+    }),
+  );
+}
+
 /** Health probes and similarly always-public checks — no rate limit. */
 export function SkipRateLimit() {
   return applyDecorators(SkipThrottle());

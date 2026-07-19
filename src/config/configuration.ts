@@ -56,4 +56,20 @@ export default () => ({
     process.env.THROTTLE_SENSITIVE_LIMIT ?? '40',
     10,
   ),
+  // Owner Android app version check (public, no DB)
+  appAndroidLatestVersion: process.env.APP_ANDROID_LATEST_VERSION ?? '1.0.0',
+  appAndroidMinimumVersion: process.env.APP_ANDROID_MINIMUM_VERSION ?? '1.0.0',
+  appAndroidForceUpdate: process.env.APP_ANDROID_FORCE_UPDATE ?? 'false',
+  appAndroidStoreUrl:
+    process.env.APP_ANDROID_STORE_URL ??
+    'https://play.google.com/store/apps/details?id=com.ensmenu.ens_owner_app',
+  appAndroidReleaseNotes: process.env.APP_ANDROID_RELEASE_NOTES ?? '',
+  throttleAppVersionTtlMs: parseInt(
+    process.env.THROTTLE_APP_VERSION_TTL_MS ?? '60000',
+    10,
+  ),
+  throttleAppVersionLimit: parseInt(
+    process.env.THROTTLE_APP_VERSION_LIMIT ?? '30',
+    10,
+  ),
 });

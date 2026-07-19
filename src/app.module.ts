@@ -10,6 +10,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { EnsBackendModule } from './infrastructure/ens-backend/ens-backend.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AdsModule } from './modules/ads/ads.module';
+import { AppVersionModule } from './modules/app-version/app-version.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
@@ -52,6 +53,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     }),
     EnsBackendModule,
     HealthModule,
+    AppVersionModule,
     AuthModule,
     UserModule,
     MenusModule,
