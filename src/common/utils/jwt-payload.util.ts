@@ -34,26 +34,31 @@ function accessSecret(configService: ConfigService): string | null {
 function payloadToIdentity(
   payload: jwt.JwtPayload,
 ): VerifiedAuthIdentity | null {
+  // Express TokenPayload: id + userId (both set). Accept either.
   const userId = coerceUserId(payload.id ?? payload.userId ?? payload.sub);
-  if (userId == null) return null;
+  if (userId == null || userId <= 0) return null;
 
+  // Role is present on Express access tokens but must not be required for verify.
   const roleRaw = payload.role ?? payload.userRole;
-  if (typeof roleRaw !== 'string' || !roleRaw.trim()) return null;
+  const role =
+    typeof roleRaw === 'string' && roleRaw.trim()
+      ? roleRaw.trim()
+      : 'user';
 
   const menuId = coerceUserId(payload.menuId) ?? undefined;
   const staffRoleId = coerceUserId(payload.staffRoleId) ?? undefined;
 
   return Object.freeze({
     userId,
-    role: roleRaw.trim(),
+    role,
     ...(menuId != null && menuId > 0 ? { menuId } : {}),
     ...(staffRoleId != null && staffRoleId > 0 ? { staffRoleId } : {}),
   });
 }
 
 /**
- * Cryptographically verifies an Owner/Staff access token using JWT_ACCESS_SECRET.
- * Does not accept refresh tokens (different secret). Pins HS256.
+ * Cryptographically verifies an Owner/Staff access token using JWT_ACCESS_SECRET only.
+ * Never uses JWT_REFRESH_SECRET. Pins HS256 to match Express jsonwebtoken defaults.
  */
 export function verifyAccessToken(
   token: string,
@@ -68,23 +73,12 @@ export function verifyAccessToken(
     });
   }
 
+  let payload: jwt.JwtPayload;
   try {
-    const payload = jwt.verify(token, secret, {
+    payload = jwt.verify(token, secret, {
       algorithms: ['HS256'],
     }) as jwt.JwtPayload;
-
-    const identity = payloadToIdentity(payload);
-    if (!identity) {
-      throw new UnauthorizedException({
-        error: 'Invalid token payload',
-        errorAr: 'محتوى رمز الدخول غير صالح',
-        code: 'AUTH_INVALID_PAYLOAD',
-      });
-    }
-    return identity;
   } catch (err) {
-    if (err instanceof UnauthorizedException) throw err;
-
     const name =
       err && typeof err === 'object' && 'name' in err
         ? String((err as { name: string }).name)
@@ -104,6 +98,16 @@ export function verifyAccessToken(
       code: 'AUTH_INVALID_TOKEN',
     });
   }
+
+  const identity = payloadToIdentity(payload);
+  if (!identity) {
+    throw new UnauthorizedException({
+      error: 'Invalid or expired token',
+      errorAr: 'رمز الدخول غير صالح أو منتهي الصلاحية',
+      code: 'AUTH_INVALID_TOKEN',
+    });
+  }
+  return identity;
 }
 
 export function extractBearerToken(req: Request): string | null {
