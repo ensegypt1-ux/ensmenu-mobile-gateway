@@ -25,6 +25,6 @@ export function isOwnerRole(role: string | undefined | null): boolean {
   const normalized = String(role ?? '')
     .trim()
     .toLowerCase();
-  // Express owner tokens use `user` / `admin`. Reject staff explicitly.
-  return normalized !== 'staff' && normalized.length > 0;
+  // Express owner tokens use `user` / `admin` only.
+  return normalized === 'user' || normalized === 'admin';
 }

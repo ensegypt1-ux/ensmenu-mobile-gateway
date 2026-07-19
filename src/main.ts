@@ -45,12 +45,19 @@ async function bootstrap() {
   const trustProxyHops = configService.get<number>('trustProxyHops') ?? 0;
 
   if (trustProxyHops > 0) {
-    // Bounded hop count so req.ip reflects the real client behind the LB.
+    // Bounded hop count (env max 5) so req.ip reflects the real client behind the LB.
+    // Must match actual reverse-proxy hops — never set higher than the LB chain.
     const httpAdapter = app.getHttpAdapter();
     const instance = httpAdapter.getInstance() as {
       set?: (key: string, value: number) => void;
     };
     instance.set?.('trust proxy', trustProxyHops);
+    if (trustProxyHops > 3) {
+      Logger.warn(
+        `TRUST_PROXY_HOPS=${trustProxyHops} is high — confirm it equals your reverse-proxy hop count (IP spoofing risk if too high)`,
+        'Bootstrap',
+      );
+    }
   }
 
   app.use(

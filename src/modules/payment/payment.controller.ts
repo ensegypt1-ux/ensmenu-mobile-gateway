@@ -7,15 +7,22 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { Request, Response } from 'express';
 import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
+import {
+  InitiateExtraMenusPaymentDto,
+  InitiateProPaymentDto,
+} from './dto/payment-initiate.dto';
 
 // TODO: remove owner/payment alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/payment', 'owner/payment'])
+@UseGuards(OwnerOnlyGuard)
 export class PaymentController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -27,13 +34,13 @@ export class PaymentController {
   async initiateProMonthly(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
+    @Body() body: InitiateProPaymentDto,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'payment/subscription/pro-monthly/initiate',
       req,
-      body: body ?? {},
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
@@ -43,13 +50,13 @@ export class PaymentController {
   async initiateProYearly(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
+    @Body() body: InitiateProPaymentDto,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'payment/subscription/pro-yearly/initiate',
       req,
-      body: body ?? {},
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
@@ -59,13 +66,13 @@ export class PaymentController {
   async initiateExtraMenus(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
+    @Body() body: InitiateExtraMenusPaymentDto,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'payment/subscription/extra-menus/initiate',
       req,
-      body: body ?? {},
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }

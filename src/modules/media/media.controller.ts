@@ -6,8 +6,12 @@ import {
   Put,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { MenuOwnershipGuard } from '../../common/guards/menu-ownership.guard';
+import { RequireMenuOwnership } from '../../common/decorators/require-menu-ownership.decorator';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
@@ -23,14 +27,32 @@ const MEDIA_FIELDS = [
   'workingHours',
 ] as const;
 
+type MediaField = (typeof MEDIA_FIELDS)[number];
+
+function pickMediaFields(body: unknown): Partial<Record<MediaField, unknown>> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {};
+  }
+  const source = body as Record<string, unknown>;
+  const subset: Partial<Record<MediaField, unknown>> = {};
+  for (const field of MEDIA_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) {
+      subset[field] = source[field];
+    }
+  }
+  return subset;
+}
+
 /** Canonical-only convenience routes; Flutter Phase 1 uses PUT /owner/menus/:id directly. */
 @Controller('mobile/v1/menus/:menuId/media')
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class MediaController {
   constructor(
     private readonly ensHttp: EnsHttpService,
     private readonly assetUrlService: AssetUrlService,
   ) {}
 
+  @RequireMenuOwnership()
   @Get()
   async getMedia(
     @Req() req: Request,
@@ -77,7 +99,7 @@ export class MediaController {
       method: 'PUT',
       path: `menus/${menuId}`,
       req,
-      body,
+      body: pickMediaFields(body),
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }

@@ -9,7 +9,11 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { MenuOwnershipGuard } from '../../common/guards/menu-ownership.guard';
+import { RequireMenuOwnership } from '../../common/decorators/require-menu-ownership.decorator';
 import { Request, Response } from 'express';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
@@ -17,6 +21,7 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
 
 // TODO: remove owner/menus alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/menus', 'owner/menus'])
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class MenusController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -68,6 +73,7 @@ export class MenusController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @RequireMenuOwnership()
   @Get(':menuId/analytics')
   async analytics(
     @Req() req: Request,
@@ -84,6 +90,7 @@ export class MenusController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @RequireMenuOwnership()
   @Get(':menuId/ratings')
   async ratings(
     @Req() req: Request,
@@ -116,6 +123,7 @@ export class MenusController {
     sendProxyResponse(res, result, this.assetUrlService);
   }
 
+  @RequireMenuOwnership()
   @Get(':menuId')
   async getOne(
     @Req() req: Request,

@@ -6,7 +6,9 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { Request, Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthThrottle } from '../../common/decorators/throttle.decorators';
@@ -16,6 +18,7 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
 
 // TODO: remove owner/auth alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/auth', 'owner/auth'])
+@UseGuards(OwnerOnlyGuard)
 export class AuthController {
   constructor(
     private readonly ensHttp: EnsHttpService,

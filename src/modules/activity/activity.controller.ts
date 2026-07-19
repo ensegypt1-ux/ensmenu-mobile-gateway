@@ -8,7 +8,10 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { MenuOwnershipGuard } from '../../common/guards/menu-ownership.guard';
 import { Request, Response } from 'express';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
@@ -19,6 +22,7 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
   'mobile/v1/menus/:menuId/activity-logs',
   'owner/menus/:menuId/activity-logs',
 ])
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class ActivityController {
   constructor(
     private readonly ensHttp: EnsHttpService,

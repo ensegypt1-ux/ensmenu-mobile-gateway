@@ -7,6 +7,7 @@ import {
   IsUrl,
   Max,
   Min,
+  MinLength,
   validateSync,
 } from 'class-validator';
 
@@ -36,6 +37,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
+  @MinLength(32, {
+    message:
+      'SECRET_KEY must be at least 32 characters (same value as Express SECRET_KEY / ENCRYPTION_KEY)',
+  })
   SECRET_KEY: string;
 
   @IsOptional()
@@ -79,7 +84,10 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(5)
+  @Max(5, {
+    message:
+      'TRUST_PROXY_HOPS must be 0–5 and must equal the number of reverse-proxy hops in front of the Gateway (never higher)',
+  })
   TRUST_PROXY_HOPS?: number;
 
   @IsOptional()

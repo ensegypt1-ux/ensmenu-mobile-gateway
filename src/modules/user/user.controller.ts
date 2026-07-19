@@ -10,14 +10,21 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { Request, Response } from 'express';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
+import {
+  ChangePasswordDto,
+  DeleteAccountDto,
+} from './dto/account-security.dto';
 
 // TODO: remove owner/user alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/user', 'owner/user'])
+@UseGuards(OwnerOnlyGuard)
 export class UserController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -184,13 +191,13 @@ export class UserController {
   async changePassword(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
+    @Body() body: ChangePasswordDto,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'POST',
       path: 'user/change-password',
       req,
-      body: body ?? {},
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }
@@ -199,13 +206,13 @@ export class UserController {
   async deleteAccount(
     @Req() req: Request,
     @Res() res: Response,
-    @Body() body: unknown,
+    @Body() body: DeleteAccountDto,
   ) {
     const result = await this.ensHttp.proxy({
       method: 'DELETE',
       path: 'user/account',
       req,
-      body: body ?? {},
+      body,
     });
     sendProxyResponse(res, result, this.assetUrlService);
   }

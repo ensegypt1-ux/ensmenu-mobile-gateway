@@ -15,11 +15,13 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { MenuOwnershipGuard } from '../../common/guards/menu-ownership.guard';
 import { SensitiveThrottle } from '../../common/decorators/throttle.decorators';
+import { ALLOWED_IMAGE_MIME_TYPES } from '../../common/utils/image-file.util';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
 import { AssetUrlService } from '../../infrastructure/storage/asset-url.service';
-import { IMPORT_ACCEPTED_MIME_TYPES, ImportService } from './import.service';
+import { ImportService } from './import.service';
 
 const IMPORT_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -29,10 +31,12 @@ function importFileInterceptor() {
     limits: { fileSize: IMPORT_FILE_SIZE, files: 1 },
     fileFilter: (_req, file, cb) => {
       const mime = (file.mimetype || '').toLowerCase();
-      const ext = file.originalname.split('.').pop()?.toLowerCase() ?? '';
-      const allowedExt =
-        ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp';
-      if (IMPORT_ACCEPTED_MIME_TYPES.has(mime) || allowedExt) {
+      // Magic bytes validated after buffer is available in ImportService.
+      if (
+        !mime ||
+        ALLOWED_IMAGE_MIME_TYPES.has(mime) ||
+        mime === 'application/octet-stream'
+      ) {
         cb(null, true);
         return;
       }
@@ -50,6 +54,7 @@ function importFileInterceptor() {
 
 /** Flutter Phase 1 alias paths — exact match required. */
 @Controller('owner/menus/:menuId')
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class ImportAliasController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -58,7 +63,6 @@ export class ImportAliasController {
   ) {}
 
   @SensitiveThrottle()
-  @UseGuards(OwnerOnlyGuard)
   @Post('import')
   @UseInterceptors(importFileInterceptor())
   async analyzeAlias(
@@ -118,6 +122,7 @@ export class ImportAliasController {
 
 /** Canonical import routes under /mobile/v1/menus/:menuId/import/* */
 @Controller('mobile/v1/menus/:menuId/import')
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class ImportCanonicalController {
   constructor(
     private readonly ensHttp: EnsHttpService,
@@ -126,7 +131,6 @@ export class ImportCanonicalController {
   ) {}
 
   @SensitiveThrottle()
-  @UseGuards(OwnerOnlyGuard)
   @Post('analyze')
   @UseInterceptors(importFileInterceptor())
   async analyze(

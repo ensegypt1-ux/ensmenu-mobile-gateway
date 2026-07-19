@@ -8,7 +8,9 @@ import {
   Put,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
 import { Request, Response } from 'express';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
@@ -16,6 +18,7 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
 
 // TODO: remove owner/menu-groups alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/menu-groups', 'owner/menu-groups'])
+@UseGuards(OwnerOnlyGuard)
 export class MenuGroupsController {
   constructor(
     private readonly ensHttp: EnsHttpService,

@@ -11,6 +11,7 @@ import {
   StaffJobRole,
   normalizeStaffJobRole,
 } from './staff-job-role.util';
+import { resolveStaffMenuId } from './staff-menu-scope.util';
 import {
   StaffOrderChannel,
   StaffOrderPresenterService,
@@ -29,10 +30,21 @@ export class StaffOrdersFlowService {
     private readonly presenter: StaffOrderPresenterService,
   ) {}
 
-  parseMenuId(query: Record<string, unknown>, body?: Record<string, unknown>): number {
-    const raw = body?.menuId ?? query.menuId;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  /** @deprecated Prefer resolveMenuId — kept for call-site clarity. */
+  parseMenuId(
+    req: Request,
+    query?: Record<string, unknown>,
+    body?: Record<string, unknown>,
+  ): number {
+    return resolveStaffMenuId(req, query, body);
+  }
+
+  resolveMenuId(
+    req: Request,
+    query?: Record<string, unknown>,
+    body?: Record<string, unknown>,
+  ): number {
+    return resolveStaffMenuId(req, query, body);
   }
 
   /**
@@ -72,7 +84,7 @@ export class StaffOrdersFlowService {
     const scope = this.parseScope(query.scope);
     const page = Math.max(1, Number(query.page ?? 1) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
-    const menuId = this.parseMenuId(query);
+    const menuId = this.resolveMenuId(req, query);
 
     if (channel === 'delivery' && !canStaffViewDelivery(role)) {
       return this.emptyList(role, channel, scope, page, limit);
@@ -140,7 +152,7 @@ export class StaffOrdersFlowService {
     | { denied: false; data: StaffPresentedDetailResult }
   > {
     const role = await this.resolveRole(req);
-    const menuId = this.parseMenuId(query);
+    const menuId = this.resolveMenuId(req, query);
     const activityLogId = Number(query.activityLogId ?? 0);
 
     if (menuId <= 0 || staffCallId <= 0) {

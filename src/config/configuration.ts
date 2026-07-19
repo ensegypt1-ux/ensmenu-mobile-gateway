@@ -27,7 +27,7 @@ export default () => ({
       String(15 * 1024 * 1024),
     10,
   ),
-  /** Number of reverse-proxy hops trusted for client IP (0 = trust none). */
+  /** Number of reverse-proxy hops trusted for client IP (0 = trust none). Cap 5. */
   trustProxyHops: parseInt(
     process.env.TRUST_PROXY_HOPS ??
       ((process.env.NODE_ENV ?? 'development') === 'production' ? '1' : '0'),

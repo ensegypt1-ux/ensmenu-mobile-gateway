@@ -11,35 +11,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { createFormData } from '../../common/utils/form-data.util';
+import {
+  ALLOWED_IMAGE_MIME_TYPES,
+  resolveSafeImageContentType,
+} from '../../common/utils/image-file.util';
 import { assertSafePathSegment } from '../../common/utils/upstream-path.util';
 import { extractJsonFromN8n, isN8nImportFailure } from './n8n-response.util';
 
-export const IMPORT_ACCEPTED_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-  'image/webp',
-]);
-
-function inferMimeType(filename: string, mimetype: string): string {
-  const lower = (mimetype || '').toLowerCase();
-  if (IMPORT_ACCEPTED_MIME_TYPES.has(lower)) {
-    return lower === 'image/jpg' ? 'image/jpeg' : lower;
-  }
-
-  const ext = filename.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    default:
-      return lower;
-  }
-}
+export const IMPORT_ACCEPTED_MIME_TYPES = ALLOWED_IMAGE_MIME_TYPES;
 
 @Injectable()
 export class ImportService {
@@ -84,17 +63,15 @@ export class ImportService {
     const locale = localeRaw === 'en' ? 'en' : 'ar';
 
     const filename = params.file.originalname || 'menu-image.jpg';
-    const mime = inferMimeType(filename, params.file.mimetype || '');
+    const normalizedMime = resolveSafeImageContentType(params.file);
 
-    if (!IMPORT_ACCEPTED_MIME_TYPES.has(mime)) {
+    if (!normalizedMime) {
       throw new BadRequestException({
         error: 'invalid_file_type',
         errorAr: 'نوع الملف غير مدعوم. استخدم JPG أو PNG أو WebP',
         code: 'IMPORT_INVALID_FILE_TYPE',
       });
     }
-
-    const normalizedMime = mime === 'image/jpg' ? 'image/jpeg' : mime;
 
     const maxBytes = this.upstreamMaxBytes();
     if (!params.file.buffer || params.file.buffer.length === 0) {

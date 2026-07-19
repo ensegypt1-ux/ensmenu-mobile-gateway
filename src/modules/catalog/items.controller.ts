@@ -9,7 +9,10 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { OwnerOnlyGuard } from '../../common/guards/role.guards';
+import { MenuOwnershipGuard } from '../../common/guards/menu-ownership.guard';
 import { Request, Response } from 'express';
 import { sendProxyResponse } from '../../common/utils/proxy-response.util';
 import { EnsHttpService } from '../../infrastructure/ens-backend/ens-http.service';
@@ -17,6 +20,7 @@ import { AssetUrlService } from '../../infrastructure/storage/asset-url.service'
 
 // TODO: remove owner/menus alias after Flutter migration (Phase 3)
 @Controller(['mobile/v1/menus/:menuId/items', 'owner/menus/:menuId/items'])
+@UseGuards(OwnerOnlyGuard, MenuOwnershipGuard)
 export class ItemsController {
   constructor(
     private readonly ensHttp: EnsHttpService,

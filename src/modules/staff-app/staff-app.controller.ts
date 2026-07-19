@@ -137,7 +137,7 @@ export class StaffAppController {
   ) {
     const staffCallId = Number(id);
     const action = String(body.action ?? '');
-    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const menuId = this.ordersFlow.resolveMenuId(req, {}, body);
     const activityLogId = Number(body.activityLogId ?? 0) || undefined;
     const result = await this.ordersFlow.postOrderAction(
       req,
@@ -172,7 +172,7 @@ export class StaffAppController {
     @Body() body: Record<string, unknown>,
   ) {
     const staffCallId = Number(id);
-    const menuId = this.ordersFlow.parseMenuId({}, body);
+    const menuId = this.ordersFlow.resolveMenuId(req, {}, body);
     const activityLogId = Number(body.activityLogId ?? 0) || undefined;
     const items = body.items;
 

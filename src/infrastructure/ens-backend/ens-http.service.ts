@@ -102,6 +102,15 @@ export class EnsHttpService {
     }
   }
 
+  private safeUpstreamHostPath(url: string): string {
+    try {
+      const u = new URL(url);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return '[upstream]';
+    }
+  }
+
   private logUpstream(
     method: string,
     url: string,
@@ -113,15 +122,8 @@ export class EnsHttpService {
 
     const summary = this.summarizeUpstreamBody(data);
     const level = status >= 400 ? 'warn' : 'debug';
-    // Log method + status only — never full upstream bodies or credentials.
-    const safeHostPath = (() => {
-      try {
-        const u = new URL(url);
-        return `${u.origin}${u.pathname}`;
-      } catch {
-        return '[upstream]';
-      }
-    })();
+    // Never log query strings, Authorization, or full upstream bodies.
+    const safeHostPath = this.safeUpstreamHostPath(url);
     const line =
       `[upstream] ${method} ${safeHostPath} → ${status} ${durationMs}ms` +
       (summary ? ` | ${summary}` : '');
@@ -235,7 +237,7 @@ export class EnsHttpService {
         }
         if (error.code === 'ECONNABORTED') {
           this.logger.warn(
-            `[upstream] ${options.method} ${url} → timeout after ${Date.now() - started}ms`,
+            `[upstream] ${options.method} ${this.safeUpstreamHostPath(url)} → timeout after ${Date.now() - started}ms`,
           );
           return {
             status: 504,
@@ -249,7 +251,7 @@ export class EnsHttpService {
       }
 
       this.logger.error(
-        `[upstream] ${options.method} ${url} → unavailable (${error instanceof Error ? error.message : String(error)})`,
+        `[upstream] ${options.method} ${this.safeUpstreamHostPath(url)} → unavailable (${error instanceof Error ? error.message : String(error)})`,
       );
 
       throw new ServiceUnavailableException({
