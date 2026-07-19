@@ -7,9 +7,9 @@ import { MapsOwnerRateLimiter } from './maps-owner-rate-limiter';
 import { MapsService } from './maps.service';
 
 /**
- * Owner Maps proxy — same JwtAuthGuard presence pattern as `/owner/images`.
- * Does not call OwnerAuthUserService (avoids local JWT secret mismatch vs
- * production Owner tokens). Staff rejection + expiry use decoded claims only.
+ * Owner Maps proxy — JwtAuthGuard presence + claim-based Owner checks.
+ * Does not use request.user / request.user.decoded (guards never set those).
+ * Does not call OwnerAuthUserService (avoids local JWT secret mismatch).
  */
 @Controller(['mobile/v1/maps', 'owner/maps'])
 @UseGuards(JwtAuthGuard)
@@ -21,9 +21,7 @@ export class MapsController {
 
   private authorize(req: Request): void {
     const { userId } = assertOwnerMapsAccess(req);
-    if (userId != null) {
-      this.ownerRateLimiter.check(userId);
-    }
+    this.ownerRateLimiter.check(userId);
   }
 
   @MapsThrottle()

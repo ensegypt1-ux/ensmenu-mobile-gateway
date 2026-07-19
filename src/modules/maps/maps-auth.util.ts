@@ -1,15 +1,17 @@
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
-import jwt from 'jsonwebtoken';
+import { decode as decodeJwt } from 'jsonwebtoken';
 import { coerceUserId } from '../../common/utils/jwt-payload.util';
 
 /**
  * Decode Owner/staff JWT claims without verifying the signature.
- * Auth presence is enforced by JwtAuthGuard; signature validation for Owner
- * traffic is deferred to Express on proxied routes. Maps is gateway-terminated,
- * so we only read claims for staff rejection, expiry refresh signaling, and
- * per-owner rate-limit keys — matching production tokens that local secrets
- * may not verify.
+ *
+ * Uses the named `decode` export (not `jsonwebtoken` default) so CJS/ESM interop
+ * cannot throw TypeError on undefined.default.decode.
+ *
+ * Auth presence is enforced by JwtAuthGuard. Maps is gateway-terminated, so we
+ * only read claims for staff rejection, expiry refresh signaling, and per-owner
+ * rate-limit keys — without depending on local JWT secret verification.
  */
 export function decodeBearerClaims(
   req: Request,
@@ -23,19 +25,26 @@ export function decodeBearerClaims(
   }
   const token = authorization.slice('Bearer '.length).trim();
   if (!token) return null;
-  const decoded = jwt.decode(token);
-  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+
+  try {
+    const payload = decodeJwt(token);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return null;
+    }
+    return payload as Record<string, unknown>;
+  } catch {
     return null;
   }
-  return decoded as Record<string, unknown>;
 }
 
-export function assertOwnerMapsAccess(req: Request): {
-  userId: number | null;
-} {
+/**
+ * Assert Owner access for Maps proxy endpoints.
+ * Returns a stable numeric Owner id for rate limiting, or throws a controlled
+ * HTTP error (never a TypeError from missing auth context).
+ */
+export function assertOwnerMapsAccess(req: Request): { userId: number } {
   const claims = decodeBearerClaims(req);
   if (!claims) {
-    // JwtAuthGuard should already reject missing Bearer; keep a hard stop.
     throw new UnauthorizedException({
       error: 'Authentication required',
       errorAr: 'مطلوب تسجيل الدخول',
@@ -60,8 +69,11 @@ export function assertOwnerMapsAccess(req: Request): {
   }
 
   const exp = claims.exp;
-  if (typeof exp === 'number' && Number.isFinite(exp) && exp * 1000 < Date.now()) {
-    // Codes/messages aligned with OwnerApiClient refreshable expiry handling.
+  if (
+    typeof exp === 'number' &&
+    Number.isFinite(exp) &&
+    exp * 1000 < Date.now()
+  ) {
     throw new UnauthorizedException({
       error: 'Token expired',
       errorAr: 'انتهت صلاحية الرمز',
@@ -70,5 +82,13 @@ export function assertOwnerMapsAccess(req: Request): {
   }
 
   const userId = coerceUserId(claims.id ?? claims.userId ?? claims.sub);
+  if (userId == null) {
+    throw new UnauthorizedException({
+      error: 'Invalid token payload',
+      errorAr: 'محتوى رمز الدخول غير صالح',
+      code: 'AUTH_INVALID_PAYLOAD',
+    });
+  }
+
   return { userId };
 }

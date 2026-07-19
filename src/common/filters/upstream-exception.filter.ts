@@ -24,7 +24,11 @@ export class UpstreamExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    this.logger.error('Unhandled gateway error', exception as Error);
+    this.logger.error(
+      `Unhandled gateway error on ${request.method} ${request.originalUrl}: ${
+        exception instanceof Error ? exception.message : String(exception)
+      }`,
+    );
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal gateway error',
