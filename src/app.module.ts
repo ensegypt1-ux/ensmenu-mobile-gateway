@@ -18,6 +18,7 @@ import { HealthModule } from './modules/health/health.module';
 import { ImportModule } from './modules/import/import.module';
 import { MediaModule } from './modules/media/media.module';
 import { MenuDeliveryModule } from './modules/menu-delivery/menu-delivery.module';
+import { MenuGroupsModule } from './modules/menu-groups/menu-groups.module';
 import { MenusModule } from './modules/menus/menus.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { ImagesModule } from './modules/images/images.module';
@@ -54,6 +55,7 @@ import { VouchersModule } from './modules/vouchers/vouchers.module';
     AuthModule,
     UserModule,
     MenusModule,
+    MenuGroupsModule,
     MenuDeliveryModule,
     BranchesModule,
     CatalogModule,
