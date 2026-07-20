@@ -181,4 +181,26 @@ describe('jwt-payload.util', () => {
     expect(() => attachAuthIdentity(req, identity)).not.toThrow();
     expect(getAuthIdentity(req)?.userId).toBe(7);
   });
+
+  it('does not throw TypeError when authIdentity is already non-configurable', () => {
+    const token = jwt.sign(
+      { id: 9, userId: 9, role: 'user' },
+      secret,
+      { algorithm: 'HS256', expiresIn: '15m' },
+    );
+    const identity = verifyAccessToken(token, configService);
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+    } as import('express').Request;
+
+    Object.defineProperty(req, 'authIdentity', {
+      value: identity,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+
+    expect(() => attachAuthIdentity(req, identity)).not.toThrow();
+    expect(getAuthIdentity(req)?.userId).toBe(9);
+  });
 });

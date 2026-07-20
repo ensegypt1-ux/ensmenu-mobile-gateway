@@ -124,31 +124,37 @@ export function extractBearerToken(req: Request): string | null {
 
 /**
  * Attach verified identity onto the request (immutable).
- * Idempotent: safe if JwtAuthGuard runs more than once on the same request
- * (e.g. APP_GUARD + controller @UseGuards).
+ * Idempotent: never throws if JwtAuthGuard somehow runs more than once
+ * on the same request. Prefer a single APP_GUARD registration only —
+ * do not also add @UseGuards(JwtAuthGuard) on controllers.
  */
 export function attachAuthIdentity(
   req: Request,
   identity: VerifiedAuthIdentity,
 ): void {
-  const existingAuth = Object.getOwnPropertyDescriptor(req, AUTH_IDENTITY_KEY);
-  if (!existingAuth) {
-    Object.defineProperty(req, AUTH_IDENTITY_KEY, {
-      value: identity,
-      writable: false,
-      enumerable: true,
-      configurable: false,
-    });
-  }
+  defineImmutableRequestProp(req, AUTH_IDENTITY_KEY, identity);
+  defineImmutableRequestProp(req, 'user', identity);
+}
 
-  const existingUser = Object.getOwnPropertyDescriptor(req, 'user');
-  if (!existingUser) {
-    Object.defineProperty(req, 'user', {
-      value: identity,
+function defineImmutableRequestProp(
+  req: Request,
+  key: string,
+  value: unknown,
+): void {
+  const existing = Object.getOwnPropertyDescriptor(req, key);
+  if (existing) return;
+
+  try {
+    Object.defineProperty(req, key, {
+      value,
       writable: false,
       enumerable: true,
       configurable: false,
     });
+  } catch (err) {
+    // Non-configurable property already present (duplicate guard attach).
+    if (err instanceof TypeError) return;
+    throw err;
   }
 }
 
